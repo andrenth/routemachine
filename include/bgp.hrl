@@ -1,0 +1,1 @@
+-define(BGP_HEADER_LENGTH, 19).
