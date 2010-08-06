@@ -29,7 +29,7 @@ init(ok) ->
   io:format("Starting server ~w~n", [self()]),
   process_flag(trap_exit, true),
   State = #state{data           = <<>>,
-                 data_processor = fun(S) -> process_header(S) end},
+                 data_processor = fun process_header/1},
   {ok, State}.
 
 handle_info({tcp, Socket, Bin},
@@ -53,7 +53,7 @@ process_header(#state{data = Data} = State)
                when bit_size(Data) >= ?BGP_HEADER_LENGTH * 8 ->
   {Hdr, Rest} = split_binary(Data, ?BGP_HEADER_LENGTH),
   NewState = State#state{data = Rest,
-                         data_processor = fun(S) -> process_message(S) end},
+                         data_processor = fun process_message/1},
   io:format("Header received: ~w~n", [Hdr]),
   Type = 0, Length = 39 - ?BGP_HEADER_LENGTH,
   process_message(NewState#state{msg_type = Type, msg_len = Length});
@@ -72,7 +72,7 @@ process_message(#state{data = Data, msg_len = Length} = State)
                 when size(Data) >= Length ->
   {Msg, Rest} = split_binary(Data, Length),
   NewState = State#state{data = Rest,
-                         data_processor = fun(S) -> process_header(S) end},
+                         data_processor = fun process_header/1},
   io:format("Message received: ~w~n", [Msg]),
   process_header(NewState);
   %case rtm_parser:parse_message(Msg, Type) of
