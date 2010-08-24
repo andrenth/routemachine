@@ -13,7 +13,7 @@ init(Port) ->
       permanent,
       infinity,
       supervisor,
-      [rtm_packager_sup]},
+      [rtm_acceptor_sup]},
   ServerSupSpec =
     {rtm_server_sup,
       {rtm_server_sup, start_link, []},
