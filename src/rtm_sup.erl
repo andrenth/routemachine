@@ -9,7 +9,7 @@ start_link(Port) ->
 init(Port) ->
   AcceptorSupSpec =
     {rtm_acceptor_sup,
-      {rtm_acceptor_sup, start_link, [Port]},
+      {rtm_acceptor_sup, start_link, []},
       permanent,
       infinity,
       supervisor,
@@ -21,4 +21,11 @@ init(Port) ->
       infinity,
       supervisor,
       [rtm_server_sup]},
-  {ok, {{one_for_one, 1, 1}, [AcceptorSupSpec, ServerSupSpec]}}.
+  FsmSupSpec =
+    {rtm_fsm_sup,
+      {rtm_fsm_sup, start_link, [Port]},
+      permanent,
+      infinity,
+      supervisor,
+      [rtm_fsm_sup]},
+  {ok, {{one_for_one, 1, 1}, [AcceptorSupSpec, ServerSupSpec, FsmSupSpec]}}.
