@@ -13,23 +13,6 @@
 
 -include_lib("bgp.hrl").
 
--record(session, {
-  socket,
-  listen_port,
-  message,
-  type,
-  local_asn,
-  remote_asn,
-  local_addr,
-  remote_addr,
-  hold_time,
-  hold_timer,
-  keepalive_time,
-  keepalive_timer,
-  conn_retry_time,
-  conn_retry_timer
-}).
-
 start_link(Port) ->
   gen_fsm:start_link(?MODULE, Port, []).
 

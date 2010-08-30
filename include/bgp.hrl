@@ -2,6 +2,10 @@
 -define(BGP_HEADER_LENGTH,    19).
 -define(BGP_MAX_MSG_LEN,    4096).
 
+-define(BGP_OPEN_MIN_LENGTH,         29).
+-define(BGP_UPDATE_MIN_LENGTH,       23).
+-define(BGP_NOTIFICATION_MIN_LENGTH, 21).
+
 % Message types.
 -define(BGP_TYPE_OPEN,         1).
 -define(BGP_TYPE_UPDATE,       2).
@@ -104,4 +108,93 @@
   type_code,
   length,
   value
+}).
+
+
+%
+% Binary patterns.
+%
+
+-define(BGP_HEADER_MARKER, 16#FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF).
+
+-define(BGP_HEADER_PATTERN,
+  << ?BGP_HEADER_MARKER : 128,
+      MessageLength     : 16,
+      MessageType       : 8 >>).
+
+-define(BGP_OPEN_PATTERN,
+  << Version      : 8,
+     ASN          : 16,
+     HoldTime     : 16,
+     BGPId        : 32,
+     OptParamsLen : 8,
+     OptParams    : OptParamsLen/binary >>).
+
+-define(BGP_UPDATE_PATTERN,
+  << UnfeasableLength    : 16,
+     WithdrawnRoutes     : UnfeasableLength/binary,
+     TotalPathAttrLength : 16,
+     PathAttrs           : TotalPathAttrLength/binary,
+     NLRI/binary >>).
+
+-define(BGP_NOTIFICATION_PATTERN,
+  << ErrorCode    : 8,
+     ErrorSubCode : 8,
+     ErrorData/binary >>).
+
+-define(BGP_OPT_PARAMS_PATTERN,
+  << ParamType   : 8,
+     ParamLength : 8,
+     ParamValue  : ParamLength/binary,
+     OtherParams/binary >>).
+
+-define(BGP_PARAM_AUTH_INFO_PATTERN,
+  << AuthCode : 8,
+     AuthData/binary >>).
+
+-define(BGP_WITHDRAWN_ROUTES_PATTERN,
+  << WithdrawnLength : 8,
+     WithdrawnPrefix : WithdrawnLength/binary,
+     OtherWithdrawn/binary >>).
+
+-define(BGP_PATH_ATTRS_PATTERN,
+  << AttrOptional   : 1,
+     AttrTransitive : 1,
+     AttrPartial    : 1,
+     AttrExtended   : 1,
+     0              : 4,  % unused bits
+     % Can't do it all in one match because of the extended bit role in
+     % defining the attribute length.
+     AttrRest/binary >>).
+
+-define(BGP_PATH_ATTR_AS_PATH_PATTERN,
+  << PathType   : 8,
+     PathLength : 8,
+     PathASNs   : PathLength/binary-unit:16,
+     OtherPaths/binary >>).
+
+-define(BGP_NLRI_PATTERN,
+  << RouteLength : 8,
+     RoutePrefix : RouteLength/binary,
+     OtherRoutes/binary >>).
+
+%
+% BGP session record.
+%
+
+-record(session, {
+  socket,
+  listen_port,
+  message,
+  type,
+  local_asn,
+  remote_asn,
+  local_addr,
+  remote_addr,
+  hold_time,
+  hold_timer,
+  keepalive_time,
+  keepalive_timer,
+  conn_retry_time,
+  conn_retry_timer
 }).
