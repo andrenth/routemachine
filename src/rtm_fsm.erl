@@ -218,12 +218,26 @@ handle_info({tcp_closed, _Socket}, open_sent, Session) ->
   ConnRetry = restart_timer(conn_retry, Session),
   {next_state, active, Session#session{conn_retry_timer = ConnRetry}};
 
+handle_info({tcp_error, _Socket}, open_sent, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession}.
+
+
 handle_info({tcp_closed, _Socket}, open_confirm, Session) ->
-  close_connection(Session),
-  {next_state, idle, Session};
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession};
+
+handle_info({tcp_error, _Socket}, open_confirm, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession};
+
 
 handle_info({tcp_closed, _Socket}, established, Session) ->
-  close_connection(Session),
+  NewSession = release_resources(Session),
+  {next_state, idle, Session};
+
+handle_info({tcp_error, _Socket}, established, Session) ->
+  NewSession = release_resources(Session),
   {next_state, idle, Session}.
 
 
