@@ -13,7 +13,7 @@
 
 -include_lib("bgp.hrl").
 
--record(peer, {
+-record(session, {
   socket,
   listen_port,
   message,
@@ -34,11 +34,11 @@ start_link(Port) ->
   gen_fsm:start_link(?MODULE, Port, []).
 
 init(Port) ->
-  Peer = #peer{listen_port     = Port,
-               hold_time       = ?BGP_TIMER_HOLD,
-               keepalive_time  = ?BGP_TIMER_KEEPALIVE,
-               conn_retry_time = ?BGP_TIMER_CONN_RETRY},
-  {ok, idle, Peer}.
+  Session = #session{listen_port     = Port,
+                     hold_time       = ?BGP_TIMER_HOLD,
+                     keepalive_time  = ?BGP_TIMER_KEEPALIVE,
+                     conn_retry_time = ?BGP_TIMER_CONN_RETRY},
+  {ok, idle, Session}.
 
 %
 % BGP FSM.
@@ -46,218 +46,220 @@ init(Port) ->
 
 % Idle state.
 
-idle(start, Peer) ->
-  ConnRetry = start_timer(conn_retry, Peer#peer.conn_retry_time),
-  {Event, NewPeer} = connect_to_peer(Peer#peer{conn_retry_timer = ConnRetry}),
+idle(start, Session) ->
+  ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
+  {Event, NewSession} =
+    connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
   gen_fsm:send_event(self(), Event),
-  {next_state, connect, NewPeer};
+  {next_state, connect, NewSession};
 
-idle(_Error, Peer) ->
+idle(_Error, Session) ->
   % TODO exponential backoff for reconnection attempt.
-  NewPeer = close_connection(Peer),
-  {next_state, idle, NewPeer}.
+  NewSession = close_connection(Session),
+  {next_state, idle, NewSession}.
 
 
 % Connect state.
 
-connect(start, Peer) ->
-  {next_state, connect, Peer};
+connect(start, Session) ->
+  {next_state, connect, Session};
 
-connect(tcp_open, Peer) ->
-  clear_timer(Peer#peer.conn_retry_timer),
-  rtm_msg:send_open(Peer),
-  {next_state, active, Peer};
+connect(tcp_open, Session) ->
+  clear_timer(Session#session.conn_retry_timer),
+  rtm_msg:send_open(Session),
+  {next_state, active, Session};
 
-connect(tcp_open_failed, Peer) ->
-  ConnRetry = restart_timer(conn_retry, Peer),
-  NewPeer = close_connection(Peer),
-  {next_state, active, NewPeer#peer{conn_retry_timer = ConnRetry}};
+connect(tcp_open_failed, Session) ->
+  ConnRetry = restart_timer(conn_retry, Session),
+  NewSession = close_connection(Session),
+  {next_state, active, NewSession#session{conn_retry_timer = ConnRetry}};
 
-connect({timeout, _Ref, conn_retry}, Peer) ->
-  ConnRetry = restart_timer(conn_retry, Peer),
-  connect_to_peer(Peer#peer{conn_retry_timer = ConnRetry}),
-  {next_state, connect, Peer};
+connect({timeout, _Ref, conn_retry}, Session) ->
+  ConnRetry = restart_timer(conn_retry, Session),
+  connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
+  {next_state, connect, Session};
 
-connect(_Event, Peer) ->
-  NewPeer = release_resources(Peer),
-  {next_state, idle, NewPeer}.
+connect(_Event, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession}.
 
 
 % Active state.
 
-active(start, Peer) ->
-  {next_state, active, Peer};
+active(start, Session) ->
+  {next_state, active, Session};
 
-active(tcp_open, Peer) ->
-  case check_peer(Peer) of
+active(tcp_open, Session) ->
+  case check_peer(Session) of
     ok ->
-      clear_timer(Peer#peer.conn_retry_timer),
-      rtm_msg:send_open(Peer),
-      HoldTimer = start_timer(hold, Peer#peer.hold_time),
-      {next_state, open_sent, Peer#peer{hold_timer = HoldTimer}};
+      clear_timer(Session#session.conn_retry_timer),
+      rtm_msg:send_open(Session),
+      HoldTimer = start_timer(hold, Session#session.hold_time),
+      {next_state, open_sent, Session#session{hold_timer = HoldTimer}};
     bad_peer ->
-      ConnRetry = restart_timer(conn_retry, Peer),
-      NewPeer = close_connection(Peer#peer{conn_retry_timer = ConnRetry}),
-      {next_state, active, NewPeer}
+      ConnRetry = restart_timer(conn_retry, Session),
+      NewSession =
+        close_connection(Session#session{conn_retry_timer = ConnRetry}),
+      {next_state, active, NewSession}
   end;
 
-active({timeout, _Ref, conn_retry}, Peer) ->
-  ConnRetry = restart_timer(conn_retry, Peer),
-  NewPeer = connect_to_peer(Peer#peer{conn_retry_timer = ConnRetry}),
-  {next_state, connect, NewPeer};
+active({timeout, _Ref, conn_retry}, Session) ->
+  ConnRetry = restart_timer(conn_retry, Session),
+  NewSession = connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
+  {next_state, connect, NewSession};
 
-active(_Event, Peer) ->
-  NewPeer = release_resources(Peer),
-  {next_state, idle, NewPeer}.
+active(_Event, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession}.
 
 
 % OpenSent state
 
-open_sent(start, Peer) ->
-  {next_state, open_sent, Peer};
+open_sent(start, Session) ->
+  {next_state, open_sent, Session};
 
-open_sent(stop, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_CEASE),
-  release_resources(Peer),
-  {next_state, idle, Peer};
+open_sent(stop, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
+  release_resources(Session),
+  {next_state, idle, Session};
 
-open_sent(open_received, Peer) ->
-  case rtm_msg:parse_open(Peer) of
+open_sent(open_received, Session) ->
+  case rtm_msg:parse_open(Session) of
     {ok, ASN, HoldTime, _BGPId} ->
-      rtm_msg:send_keepalive(Peer),
-      NewHoldTime = negotiate_hold_time(Peer#peer.hold_time, HoldTime),
-      NewPeer = start_timers(Peer, NewHoldTime),
-      {next_state, open_confirm, NewPeer#peer{remote_asn = ASN}};
+      rtm_msg:send_keepalive(Session),
+      NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
+      NewSession = start_timers(Session, NewHoldTime),
+      {next_state, open_confirm, NewSession#session{remote_asn = ASN}};
     {error, Error} ->
-      rtm_msg:send_notification(Peer, Error),
-      release_resources(Peer),
-      {next_state, idle, Peer}
+      rtm_msg:send_notification(Session, Error),
+      release_resources(Session),
+      {next_state, idle, Session}
   end;
 
-open_sent({timeout, _Ref, hold}, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_HOLD_TIME),
-  release_resources(Peer),
-  {next_state, idle, Peer};
+open_sent({timeout, _Ref, hold}, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  release_resources(Session),
+  {next_state, idle, Session};
 
-open_sent(_Event, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_FSM),
-  release_resources(Peer),
-  {next_state, idle, Peer}.
+open_sent(_Event, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
+  release_resources(Session),
+  {next_state, idle, Session}.
 
 
 % OpenConfirm state.
 
-open_confirm(start, Peer) ->
-  {next_state, open_confirm, Peer};
+open_confirm(start, Session) ->
+  {next_state, open_confirm, Session};
 
-open_confirm(stop, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_CEASE),
-  release_resources(Peer),
-  {next_state, idle, Peer};
+open_confirm(stop, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
+  release_resources(Session),
+  {next_state, idle, Session};
 
-open_confirm(keepalive_received, Peer) ->
-  {next_state, established, Peer};
+open_confirm(keepalive_received, Session) ->
+  {next_state, established, Session};
 
-open_confirm({timeout, hold}, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_HOLD_TIME),
-  {next_state, idle, Peer};
+open_confirm({timeout, hold}, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  {next_state, idle, Session};
 
-open_confirm(notification_received, Peer) ->
-  {next_state, idle, Peer};
+open_confirm(notification_received, Session) ->
+  {next_state, idle, Session};
 
-open_confirm({timeout, keepalive}, Peer) ->
-  KeepAlive = restart_timer(keepalive, Peer),
-  rtm_msg:send_keepalive(Peer),
-  {next_state, open_confirm, Peer#peer{keepalive_timer = KeepAlive}};
+open_confirm({timeout, keepalive}, Session) ->
+  KeepAlive = restart_timer(keepalive, Session),
+  rtm_msg:send_keepalive(Session),
+  {next_state, open_confirm, Session#session{keepalive_timer = KeepAlive}};
 
-open_confirm(_Event, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_FSM),
-  release_resources(Peer),
-  {next_state, idle, Peer}.
+open_confirm(_Event, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
+  release_resources(Session),
+  {next_state, idle, Session}.
 
 
 % Established state.
 
-established(start, Peer) ->
-  {next_state, established, Peer};
+established(start, Session) ->
+  {next_state, established, Session};
 
-established(stop, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_CEASE),
-  release_resources(Peer),
-  {next_state, idle, Peer};
+established(stop, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
+  release_resources(Session),
+  {next_state, idle, Session};
 
-established(update_received, Peer) ->
-  Hold = restart_timer(hold, Peer),
-  NewPeer = Peer#peer{hold_timer = Hold},
+established(update_received, Session) ->
+  Hold = restart_timer(hold, Session),
+  NewSession = Session#session{hold_timer = Hold},
   % TODO handle update - section 6.3.
-  case rtm_msg:parse_update(NewPeer) of
+  case rtm_msg:parse_update(NewSession) of
     ok ->
-      {next_state, established, NewPeer};
+      {next_state, established, NewSession};
     {error, _Error} ->
-      rtm_msg:send_notification(NewPeer, ?BGP_ERR_UPDATE),
-      release_resources(NewPeer),
-      {next_state, idle, NewPeer}
+      rtm_msg:send_notification(NewSession, ?BGP_ERR_UPDATE),
+      release_resources(NewSession),
+      {next_state, idle, NewSession}
   end;
 
-established(keepalive_received, Peer) ->
-  Hold = restart_timer(hold, Peer),
-  {next_state, established, Peer#peer{hold_timer = Hold}};
+established(keepalive_received, Session) ->
+  Hold = restart_timer(hold, Session),
+  {next_state, established, Session#session{hold_timer = Hold}};
 
-established(notification_received, Peer) ->
-  release_resources(Peer),
-  {next_state, idle, Peer};
+established(notification_received, Session) ->
+  release_resources(Session),
+  {next_state, idle, Session};
 
-established({timeout, hold}, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_HOLD_TIME),
-  release_resources(Peer),
-  {next_state, idle, Peer};
+established({timeout, hold}, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  release_resources(Session),
+  {next_state, idle, Session};
 
-established({timeout, keepalive}, Peer) ->
-  KeepAlive = restart_timer(keepalive, Peer),
-  rtm_msg:send_keepalive(Peer),
-  {next_state, established, Peer#peer{keepalive_timer = KeepAlive}};
+established({timeout, keepalive}, Session) ->
+  KeepAlive = restart_timer(keepalive, Session),
+  rtm_msg:send_keepalive(Session),
+  {next_state, established, Session#session{keepalive_timer = KeepAlive}};
 
-established(_Event, Peer) ->
-  rtm_msg:send_notification(Peer, ?BGP_ERR_FSM),
-  release_resources(Peer),
-  % TODO delete_routes(Peer),
-  {next_state, idle, Peer}.
+established(_Event, Session) ->
+  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
+  release_resources(Session),
+  % TODO delete_routes(Session),
+  {next_state, idle, Session}.
 
 
 % Other callbacks.
 
 % Connection closed by peer while in different states.
 
-handle_info({tcp_closed, _Socket}, open_sent, Peer) ->
-  close_connection(Peer),
-  ConnRetry = restart_timer(conn_retry, Peer),
-  {next_state, active, Peer#peer{conn_retry_timer = ConnRetry}};
+handle_info({tcp_closed, _Socket}, open_sent, Session) ->
+  close_connection(Session),
+  ConnRetry = restart_timer(conn_retry, Session),
+  {next_state, active, Session#session{conn_retry_timer = ConnRetry}};
 
-handle_info({tcp_closed, _Socket}, open_confirm, Peer) ->
-  close_connection(Peer),
-  {next_state, idle, Peer};
+handle_info({tcp_closed, _Socket}, open_confirm, Session) ->
+  close_connection(Session),
+  {next_state, idle, Session};
 
-handle_info({tcp_closed, _Socket}, established, Peer) ->
-  close_connection(Peer),
-  {next_state, idle, Peer}.
+handle_info({tcp_closed, _Socket}, established, Session) ->
+  close_connection(Session),
+  {next_state, idle, Session}.
 
 
 %
 % Internal functions.
 %
 
-restart_timer(conn_retry, Peer) ->
-  clear_timer(Peer#peer.conn_retry_timer),
-  start_timer(conn_retry, Peer#peer.conn_retry_time);
+restart_timer(conn_retry, Session) ->
+  clear_timer(Session#session.conn_retry_timer),
+  start_timer(conn_retry, Session#session.conn_retry_time);
 
-restart_timer(keepalive, Peer) ->
-  clear_timer(Peer#peer.keepalive_timer),
-  start_timer(keepalive, Peer#peer.keepalive_time);
+restart_timer(keepalive, Session) ->
+  clear_timer(Session#session.keepalive_timer),
+  start_timer(keepalive, Session#session.keepalive_time);
 
-restart_timer(hold, #peer{hold_time = HoldTime} = Peer) ->
-  clear_timer(Peer#peer.hold_timer),
+restart_timer(hold, #session{hold_time = HoldTime} = Session) ->
+  clear_timer(Session#session.hold_timer),
   case HoldTime > 0 of
-    true  -> start_timer(keepalive, Peer#peer.keepalive_time);
+    true  -> start_timer(keepalive, Session#session.keepalive_time);
     false -> undefined
   end.
 
@@ -269,33 +271,33 @@ clear_timer(Timer) ->
 
 % Instead of implementing collision detection, just make sure there's
 % only one connection per peer. This is what OpenBGPd does.
-connect_to_peer(#peer{socket = undefined} = Peer) ->
-  ListenPort = Peer#peer.listen_port,
-  LocalAddr  = Peer#peer.local_addr,
-  RemoteAddr = Peer#peer.remote_addr,
+connect_to_peer(#session{socket = undefined} = Session) ->
+  ListenPort = Session#session.listen_port,
+  LocalAddr  = Session#session.local_addr,
+  RemoteAddr = Session#session.remote_addr,
   {ok, _Pid} = rtm_acceptor_sup:start_child(self(), ListenPort),
   SockOpts = [binary, {ip, LocalAddr}, {packet, raw}, {active, false}],
   case gen_tcp:connect(RemoteAddr, ListenPort, SockOpts) of
-    {ok, Socket}     -> {tcp_open, Peer#peer{socket = Socket}};
-    {error, _Reason} -> {tcp_open_failed, Peer}
+    {ok, Socket}     -> {tcp_open, Session#session{socket = Socket}};
+    {error, _Reason} -> {tcp_open_failed, Session}
   end;
 
 % Already has a socket; ignore.
-connect_to_peer(Peer) ->
-  Peer.
+connect_to_peer(Session) ->
+  Session.
 
-close_connection(#peer{socket = Socket} = Peer) ->
+close_connection(#session{socket = Socket} = Session) ->
   gen_tcp:close(Socket),
-  Peer#peer{socket = undefined}.
+  Session#session{socket = undefined}.
 
-release_resources(Peer) ->
-  NewPeer = close_connection(Peer),
-  clear_timer(Peer#peer.conn_retry_timer),
-  clear_timer(Peer#peer.hold_timer),
-  clear_timer(Peer#peer.keepalive_timer),
-  NewPeer.
+release_resources(Session) ->
+  NewSession = close_connection(Session),
+  clear_timer(Session#session.conn_retry_timer),
+  clear_timer(Session#session.hold_timer),
+  clear_timer(Session#session.keepalive_timer),
+  NewSession.
 
-check_peer(#peer{socket = Socket, remote_addr = RemoteAddr}) ->
+check_peer(#session{socket = Socket, remote_addr = RemoteAddr}) ->
   {ok, {Addr, _Port}} = inet:peername(Socket),
   case Addr of
     RemoteAddr -> ok;
@@ -309,11 +311,11 @@ negotiate_hold_time(LocalHoldTime, RemoteHoldTime) ->
     false -> HoldTime
   end.
 
-start_timers(Peer, 0) ->
-  Peer;
-start_timers(Peer, HoldTime) ->
-  KeepAlive = start_timer(keepalive, Peer#peer.keepalive_time),
+start_timers(Session, 0) ->
+  Session;
+start_timers(Session, HoldTime) ->
+  KeepAlive = start_timer(keepalive, Session#session.keepalive_time),
   Hold = start_timer(hold, HoldTime),
-  Peer#peer{hold_time       = HoldTime,
-            hold_timer      = Hold,
-            keepalive_timer = KeepAlive}.
+  Session#session{hold_time       = HoldTime,
+                  hold_timer      = Hold,
+                  keepalive_timer = KeepAlive}.
