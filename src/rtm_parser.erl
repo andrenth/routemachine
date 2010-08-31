@@ -9,8 +9,9 @@
 
 parse_header(?BGP_HEADER_PATTERN) ->
   #bgp_header{
-    message_length = MessageLength,
-    message_type   = MessageType
+    marker   = Marker,
+    msg_len  = MessageLength,
+    msg_type = MessageType
   }.
 
 parse_open(?BGP_OPEN_PATTERN) ->
@@ -24,15 +25,23 @@ parse_open(?BGP_OPEN_PATTERN) ->
   }.
 
 parse_update(?BGP_UPDATE_PATTERN) ->
+  {Attrs, WellKnown} = parse_path_attrs(PathAttrs),
   #bgp_update{
+    unfeasible_len   = UnfeasableLength,
+    attrs_len        = TotalPathAttrLength,
     withdrawn_routes = parse_withdrawn_routes(WithdrawnRoutes),
-    path_attrs       = parse_path_attrs(PathAttrs),
+    path_attrs       = Attrs,
+    well_known_attrs = WellKnown,
     nlri             = parse_nlri(NLRI)
   }.
 
 parse_notification(?BGP_NOTIFICATION_PATTERN) ->
   Data = parse_notification(ErrorCode, ErrorSubCode, ErrorData),
-  {ErrorCode, ErrorSubCode, Data}.
+  #bgp_notification{
+    error_code    = ErrorCode,
+    error_subcode = ErrorSubCode,
+    data          = Data
+  }.
 
 %
 % Internal functions.
@@ -65,12 +74,12 @@ parse_withdrawn_routes(?BGP_WITHDRAWN_ROUTES_PATTERN, Parsed) ->
   parse_withdrawn_routes(OtherWithdrawn, [WithdrawnPrefix | Parsed]).
 
 parse_path_attrs(Attrs) ->
-  parse_path_attrs(Attrs, []).
+  parse_path_attrs(Attrs, [], 0).
 
-parse_path_attrs(<<>>, Parsed) ->
-  Parsed;
+parse_path_attrs(<<>>, Parsed, WellKnown) ->
+  {Parsed, WellKnown};
 
-parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed) ->
+parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed, WellKnown) ->
   AttrLengthLength = (AttrExtended + 1) * 8,
   << AttrTypeCode : 8,
      AttrLength   : AttrLengthLength,
@@ -81,17 +90,35 @@ parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed) ->
            optional   = AttrOptional,
            transitive = AttrTransitive,
            partial    = AttrPartial,
+           extended   = AttrExtended,
            type_code  = AttrTypeCode,
            length     = AttrLength,
-           value      = Value
+           value      = Value,
+           raw_value  = AttrValue % XXX this is just to ease the creation
+                                  %     of NOTIFICATION messages.
          },
-  parse_path_attrs(OtherPathAttrs, [Attr | Parsed]).
+  NewWellKnown = add_flag(WellKnown, AttrTypeCode),
+  parse_path_attrs(OtherPathAttrs, [Attr | Parsed], NewWellKnown).
+
+
+add_flag(Flags, ?BGP_PATH_ATTR_ORIGIN) ->
+  Flags bor ?BGP_WELL_KNOWN_FLAG_ORIGIN;
+add_flag(Flags, ?BGP_PATH_ATTR_AS_PATH) ->
+  Flags bor ?BGP_WELL_KNOWN_FLAG_AS_PATH;
+add_flag(Flags, ?BGP_PATH_ATTR_NEXT_HOP) ->
+  Flags bor ?BGP_WELL_KNOWN_FLAG_NEXT_HOP;
+add_flag(Flags, ?BGP_PATH_ATTR_LOCAL_PREF) ->
+  Flags bor ?BGP_WELL_KNOWN_FLAG_LOCAL_PREF;
+add_flag(Flags, ?BGP_PATH_ATTR_ATOMIC_AGGR) ->
+  Flags bor ?BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR;
+add_flag(Flags, _) ->
+  Flags.
 
 parse_attr_value(?BGP_PATH_ATTR_ORIGIN, <<Value:8>>) ->
   Value;
 
 parse_attr_value(?BGP_PATH_ATTR_AS_PATH, Paths) ->
-  parse_as_paths(Paths, []);
+  parse_as_path(Paths, []);
 
 parse_attr_value(?BGP_PATH_ATTR_NEXT_HOP, NextHop) ->
   NextHop;
@@ -108,11 +135,11 @@ parse_attr_value(?BGP_PATH_ATTR_ATOMIC_AGGR, <<>>) ->
 parse_attr_value(?BGP_PATH_ATTR_AGGREGATOR, <<ASN:16, BGPId:32>>) ->
   {ASN, BGPId}.
 
-parse_as_paths(<<>>, Parsed) ->
+parse_as_path(<<>>, Parsed) ->
   Parsed;
 
-parse_as_paths(?BGP_PATH_ATTR_AS_PATH_PATTERN, Parsed) ->
-  parse_as_paths(OtherPaths, [{PathType, PathASNs} | Parsed]).
+parse_as_path(?BGP_PATH_ATTR_AS_PATH_PATTERN, Parsed) ->
+  parse_as_path(OtherPaths, [{PathType, PathASNs} | Parsed]).
 
 parse_nlri(NLRI) ->
   parse_nlri(NLRI, []).
@@ -153,21 +180,21 @@ parse_notification(?BGP_ERR_OPEN, ?BGP_OPEN_ERR_AUTH_FAIL, <<>>) ->
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST, <<>>) ->
   undefined;
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_FLAGS, Data) ->
-  parse_path_attrs(Data);
+  element(1, parse_path_attrs(Data));
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LENGTH, Data) ->
-  parse_path_attrs(Data);
+  element(1, parse_path_attrs(Data));
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_MISSING, <<Code:8>>) ->
   Code;
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_UNRECOG, Data) ->
-  parse_path_attrs(Data);
+  element(1, parse_path_attrs(Data));
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ORIGIN, Data) ->
-  parse_path_attrs(Data);
+  element(1, parse_path_attrs(Data));
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_NEXT_HOP, Data) ->
-  parse_path_attrs(Data);
+  element(1, parse_path_attrs(Data));
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_AS_PATH, <<>>) ->
   undefined;
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_OPT_ATTR, Data) ->
-  parse_path_attrs(Data);
+  element(1, parse_path_attrs(Data));
 parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_NETWORK, <<>>) ->
   undefined;
 

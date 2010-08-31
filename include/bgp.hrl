@@ -24,6 +24,13 @@
 -define(BGP_PATH_ATTR_ATOMIC_AGGR, 6).
 -define(BGP_PATH_ATTR_AGGREGATOR,  7).
 
+% Well-known attributes (flags used in message validation).
+-define(BGP_WELL_KNOWN_FLAG_ORIGIN,       1).
+-define(BGP_WELL_KNOWN_FLAG_AS_PATH,      2).
+-define(BGP_WELL_KNOWN_FLAG_NEXT_HOP,     4).
+-define(BGP_WELL_KNOWN_FLAG_LOCAL_PREF,   8).
+-define(BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR, 16).
+
 % Path attribute values.
 -define(BGP_PATH_ATTR_ORIGIN_IGP,        0).
 -define(BGP_PATH_ATTR_ORIGIN_EGP,        1).
@@ -57,7 +64,7 @@
 -define(BGP_UPDATE_ERR_ATTR_FLAGS,   4).
 -define(BGP_UPDATE_ERR_ATTR_LENGTH,  5).
 -define(BGP_UPDATE_ERR_ORIGIN,       6).
--define(BGP_UPDATE_ERR_ROUTING_LOOP, 7).
+-define(BGP_UPDATE_ERR_LOOP,         7).
 -define(BGP_UPDATE_ERR_NEXT_HOP,     8).
 -define(BGP_UPDATE_ERR_OPT_ATTR,     9).
 -define(BGP_UPDATE_ERR_NETWORK,      10).
@@ -77,8 +84,9 @@
 %
 
 -record(bgp_header, {
-  message_length,
-  message_type
+  marker,
+  msg_len,
+  msg_type
 }).
 
 -record(bgp_open, {
@@ -96,8 +104,11 @@
 }).
 
 -record(bgp_update,{
+    unfeasible_len,
+    attrs_len,
     withdrawn_routes,
     path_attrs,
+    well_known_attrs,
     nlri
 }).
 
@@ -105,11 +116,18 @@
   optional,
   transitive,
   partial,
+  extended,
   type_code,
   length,
-  value
+  value,
+  raw_value
 }).
 
+-record(bgp_notification, {
+  error_code,
+  error_subcode,
+  data
+}).
 
 %
 % Binary patterns.
@@ -118,9 +136,9 @@
 -define(BGP_HEADER_MARKER, 16#FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF).
 
 -define(BGP_HEADER_PATTERN,
-  << ?BGP_HEADER_MARKER : 128,
-      MessageLength     : 16,
-      MessageType       : 8 >>).
+  << Marker        : 128,
+     MessageLength : 16,
+     MessageType   : 8 >>).
 
 -define(BGP_OPEN_PATTERN,
   << Version      : 8,
