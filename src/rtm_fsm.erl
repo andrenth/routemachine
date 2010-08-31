@@ -108,7 +108,7 @@ open_sent(stop, Session) ->
 
 open_sent(open_received, Session) ->
   case rtm_msg:parse_open(Session) of
-    {ok, ASN, HoldTime, _BGPId} ->
+    {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
       rtm_msg:send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
@@ -220,7 +220,7 @@ handle_info({tcp_closed, _Socket}, open_sent, Session) ->
 
 handle_info({tcp_error, _Socket}, open_sent, Session) ->
   NewSession = release_resources(Session),
-  {next_state, idle, NewSession}.
+  {next_state, idle, NewSession};
 
 
 handle_info({tcp_closed, _Socket}, open_confirm, Session) ->
@@ -234,11 +234,11 @@ handle_info({tcp_error, _Socket}, open_confirm, Session) ->
 
 handle_info({tcp_closed, _Socket}, established, Session) ->
   NewSession = release_resources(Session),
-  {next_state, idle, Session};
+  {next_state, idle, NewSession};
 
 handle_info({tcp_error, _Socket}, established, Session) ->
   NewSession = release_resources(Session),
-  {next_state, idle, Session}.
+  {next_state, idle, NewSession}.
 
 
 %
