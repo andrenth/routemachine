@@ -1,47 +1,63 @@
 -module(rtm_parser).
 -include_lib("bgp.hrl").
 
--export([parse_header/1, parse_open/1, parse_update/1, parse_notification/1]).
+-export([parse_header/1, parse_open/1, parse_update/2, parse_notification/1]).
 
 %
 % Parser functions.
 %
 
 parse_header(?BGP_HEADER_PATTERN) ->
-  #bgp_header{
+  Hdr = #bgp_header{
     marker   = Marker,
     msg_len  = MessageLength,
     msg_type = MessageType
-  }.
+  },
+  case rtm_msg:validate_header(Hdr) of
+    ok    -> {ok, Hdr};
+    Error -> Error
+  end.
 
 parse_open(?BGP_OPEN_PATTERN) ->
-  #bgp_open{
+  Msg = #bgp_open{
     version        = Version,
     asn            = ASN,
     hold_time      = HoldTime,
     bgp_id         = BGPId,
     opt_params_len = OptParamsLen,
     opt_params     = parse_opt_params(OptParams)
-  }.
+  },
+  case rtm_msg:validate_open(Msg) of
+    ok    -> {ok, Msg};
+    Error -> Error
+  end.
 
-parse_update(?BGP_UPDATE_PATTERN) ->
+parse_update(?BGP_UPDATE_PATTERN, Len) ->
   {Attrs, WellKnown} = parse_path_attrs(PathAttrs),
-  #bgp_update{
+  Msg = #bgp_update{
     unfeasible_len   = UnfeasableLength,
     attrs_len        = TotalPathAttrLength,
     withdrawn_routes = parse_withdrawn_routes(WithdrawnRoutes),
     path_attrs       = Attrs,
     well_known_attrs = WellKnown,
     nlri             = parse_nlri(NLRI)
-  }.
+  },
+  case rtm_msg:validate_update(Msg, Len) of
+    ok    -> {ok, Msg};
+    Error -> Error
+  end.
 
 parse_notification(?BGP_NOTIFICATION_PATTERN) ->
   Data = parse_notification(ErrorCode, ErrorSubCode, ErrorData),
-  #bgp_notification{
+  Msg = #bgp_notification{
     error_code    = ErrorCode,
     error_subcode = ErrorSubCode,
     data          = Data
-  }.
+  },
+  case rtm_msg:validate_notification(Msg) of
+    ok    -> {ok, Msg};
+    Error -> Error
+  end.
 
 %
 % Internal functions.
