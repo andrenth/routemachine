@@ -8,6 +8,9 @@
 -export([idle/2, connect/2, active/2, open_sent/2, open_confirm/2,
          established/2]).
 
+% Exports for gen_fsm.
+-export([terminate/3]).
+
 -include_lib("bgp.hrl").
 
 start_link(Establishment) ->
@@ -69,8 +72,7 @@ connect({timeout, _Ref, conn_retry}, Session) ->
   {next_state, connect, NewSession};
 
 connect(_Event, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession}.
+  {stop, normal, Session}.
 
 
 % Active state.
@@ -98,8 +100,7 @@ active({timeout, _Ref, conn_retry}, Session) ->
   {next_state, connect, NewSession};
 
 active(_Event, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession}.
+  {stop, normal, Session}.
 
 
 % OpenSent state
@@ -109,8 +110,7 @@ open_sent(start, Session) ->
 
 open_sent(stop, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
-  release_resources(Session),
-  {next_state, idle, Session};
+  {stop, normal, Session};
 
 open_sent(open_received, Session) ->
   case rtm_msg:parse_open(Session) of
@@ -121,14 +121,12 @@ open_sent(open_received, Session) ->
       {next_state, open_confirm, NewSession#session{remote_asn = ASN}};
     {error, Error} ->
       rtm_msg:send_notification(Session, Error),
-      release_resources(Session),
-      {next_state, idle, Session}
+      {stop, normal, Session}
   end;
 
 open_sent({timeout, _Ref, hold}, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
-  release_resources(Session),
-  {next_state, idle, Session};
+  {stop, normal, Session};
 
 open_sent(tcp_closed, Session) ->
   close_connection(Session),
@@ -136,13 +134,11 @@ open_sent(tcp_closed, Session) ->
   {next_state, active, Session#session{conn_retry_timer = ConnRetry}};
 
 open_sent(tcp_fatal, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
+  {stop, normal, Session};
 
 open_sent(_Event, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
-  release_resources(Session),
-  {next_state, idle, Session}.
+  {stop, normal, Session}.
 
 
 % OpenConfirm state.
@@ -152,8 +148,7 @@ open_confirm(start, Session) ->
 
 open_confirm(stop, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
-  release_resources(Session),
-  {next_state, idle, Session};
+  {stop, normal, Session};
 
 open_confirm(keepalive_received, Session) ->
   {next_state, established, Session};
@@ -171,17 +166,14 @@ open_confirm({timeout, keepalive}, Session) ->
   {next_state, open_confirm, Session#session{keepalive_timer = KeepAlive}};
 
 open_confirm(tcp_closed, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
+  {stop, normal, Session};
 
 open_confirm(tcp_fatal, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
+  {stop, normal, Session};
 
 open_confirm(_Event, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
-  release_resources(Session),
-  {next_state, idle, Session}.
+  {stop, normal, Session}.
 
 
 % Established state.
@@ -191,8 +183,7 @@ established(start, Session) ->
 
 established(stop, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
-  release_resources(Session),
-  {next_state, idle, Session};
+  {stop, stop, Session};
 
 established(update_received, Session) ->
   Hold = restart_timer(hold, Session),
@@ -203,8 +194,7 @@ established(update_received, Session) ->
       {next_state, established, NewSession};
     {error, _Error} ->
       rtm_msg:send_notification(NewSession, ?BGP_ERR_UPDATE),
-      release_resources(NewSession),
-      {next_state, idle, NewSession}
+      {stop, normal, NewSession}
   end;
 
 established(keepalive_received, Session) ->
@@ -212,13 +202,11 @@ established(keepalive_received, Session) ->
   {next_state, established, Session#session{hold_timer = Hold}};
 
 established(notification_received, Session) ->
-  release_resources(Session),
-  {next_state, idle, Session};
+  {stop, normal, Session};
 
 established({timeout, hold}, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
-  release_resources(Session),
-  {next_state, idle, Session};
+  {stop, normal, Session};
 
 established({timeout, keepalive}, Session) ->
   KeepAlive = restart_timer(keepalive, Session),
@@ -226,19 +214,23 @@ established({timeout, keepalive}, Session) ->
   {next_state, established, Session#session{keepalive_timer = KeepAlive}};
 
 established(tcp_closed, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
+  {stop, normal, Session};
 
 established(tcp_fatal, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
+  {stop, normal, Session};
 
 established(_Event, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
-  release_resources(Session),
   % TODO delete_routes(Session),
-  {next_state, idle, Session}.
+  {stop, normal, Session}.
 
+
+%
+% gen_fsm callbacks.
+%
+terminate(_Reason, _StateName, Session) ->
+  release_resources(Session),
+  ok.
 
 %
 % Internal functions.
