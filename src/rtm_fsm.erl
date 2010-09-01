@@ -58,7 +58,7 @@ connect(start, Session) ->
 
 connect(tcp_open, Session) ->
   clear_timer(Session#session.conn_retry_timer),
-  rtm_msg:send_open(Session),
+  send_open(Session),
   {next_state, active, Session};
 
 connect(tcp_open_failed, Session) ->
@@ -84,7 +84,7 @@ active(tcp_open, Session) ->
   case check_peer(Session) of
     ok ->
       clear_timer(Session#session.conn_retry_timer),
-      rtm_msg:send_open(Session),
+      send_open(Session),
       HoldTimer = start_timer(hold, Session#session.hold_time),
       {next_state, open_sent, Session#session{hold_timer = HoldTimer}};
     bad_peer ->
@@ -109,23 +109,23 @@ open_sent(start, Session) ->
   {next_state, open_sent, Session};
 
 open_sent(stop, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
+  send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
 open_sent({open_received, Bin}, Session) ->
   case rtm_parser:parse_open(Bin) of
     {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
-      rtm_msg:send_keepalive(Session),
+      send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
       {next_state, open_confirm, NewSession#session{remote_asn = ASN}};
     {error, Error} ->
-      rtm_msg:send_notification(Session, Error),
+      send_notification(Session, Error),
       {stop, normal, Session}
   end;
 
 open_sent({timeout, _Ref, hold}, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {stop, normal, Session};
 
 open_sent(tcp_closed, Session) ->
@@ -137,7 +137,7 @@ open_sent(tcp_fatal, Session) ->
   {stop, normal, Session};
 
 open_sent(_Event, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
+  send_notification(Session, ?BGP_ERR_FSM),
   {stop, normal, Session}.
 
 
@@ -147,14 +147,14 @@ open_confirm(start, Session) ->
   {next_state, open_confirm, Session};
 
 open_confirm(stop, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
+  send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
 open_confirm(keepalive_received, Session) ->
   {next_state, established, Session};
 
 open_confirm({timeout, hold}, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {next_state, idle, Session};
 
 open_confirm({notification_received, _Bin}, Session) ->
@@ -163,7 +163,7 @@ open_confirm({notification_received, _Bin}, Session) ->
 
 open_confirm({timeout, keepalive}, Session) ->
   KeepAlive = restart_timer(keepalive, Session),
-  rtm_msg:send_keepalive(Session),
+  send_keepalive(Session),
   {next_state, open_confirm, Session#session{keepalive_timer = KeepAlive}};
 
 open_confirm(tcp_closed, Session) ->
@@ -173,7 +173,7 @@ open_confirm(tcp_fatal, Session) ->
   {stop, normal, Session};
 
 open_confirm(_Event, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
+  send_notification(Session, ?BGP_ERR_FSM),
   {stop, normal, Session}.
 
 
@@ -183,7 +183,7 @@ established(start, Session) ->
   {next_state, established, Session};
 
 established(stop, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
+  send_notification(Session, ?BGP_ERR_CEASE),
   {stop, stop, Session};
 
 established({update_received, Bin, Len}, Session) ->
@@ -194,7 +194,7 @@ established({update_received, Bin, Len}, Session) ->
       % TODO handle update - section 6.3.
       {next_state, established, NewSession};
     {error, _Error} ->
-      rtm_msg:send_notification(NewSession, ?BGP_ERR_UPDATE),
+      send_notification(NewSession, ?BGP_ERR_UPDATE),
       {stop, normal, NewSession}
   end;
 
@@ -207,12 +207,12 @@ established({notification_received, _Bin}, Session) ->
   {stop, normal, Session};
 
 established({timeout, hold}, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {stop, normal, Session};
 
 established({timeout, keepalive}, Session) ->
   KeepAlive = restart_timer(keepalive, Session),
-  rtm_msg:send_keepalive(Session),
+  send_keepalive(Session),
   {next_state, established, Session#session{keepalive_timer = KeepAlive}};
 
 established(tcp_closed, Session) ->
@@ -222,7 +222,7 @@ established(tcp_fatal, Session) ->
   {stop, normal, Session};
 
 established(_Event, Session) ->
-  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
+  send_notification(Session, ?BGP_ERR_FSM),
   % TODO delete_routes(Session),
   {stop, normal, Session}.
 
@@ -314,3 +314,27 @@ start_timers(Session, HoldTime) ->
   Session#session{hold_time       = HoldTime,
                   hold_timer      = Hold,
                   keepalive_timer = KeepAlive}.
+
+
+% Message sending.
+
+send_open(#session{server     = Server,
+                   local_asn  = ASN,
+                   hold_time  = HoldTime,
+                   local_addr = LocalAddr}) ->
+  send(Server, rtm_msg:build_open(ASN, HoldTime, LocalAddr)).
+
+send_notification(#session{server = Server}, {Code, SubCode, Data}) ->
+  send(Server, rtm_msg:build_notification(Code, SubCode, Data));
+
+send_notification(Session, {Code, SubCode}) ->
+  send_notification(Session, {Code, SubCode, <<>>});
+
+send_notification(Session, Code) ->
+  send_notification(Session, {Code, 0, <<>>}).
+
+send_keepalive(#session{server = Server}) ->
+  send(Server, rtm_msg:build_keepalive()).
+
+send(Server, Bin) ->
+  gen_server:cast(Server, {send_msg, Bin}).

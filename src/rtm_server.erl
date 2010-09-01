@@ -54,6 +54,10 @@ handle_call(peername, _From, #state{socket = Socket} = State) ->
   end,
   {reply, Reply, State}.
 
+handle_cast({send_msg, Bin}, #state{socket = Socket} = State) ->
+  gen_tcp:send(Socket, Bin),
+  {noreply, State};
+
 handle_cast(close_connection, #state{socket = Socket} = State) ->
   io:format("Closing connection with peer, stopping server ~w~n", [self()]),
   gen_tcp:close(Socket),
