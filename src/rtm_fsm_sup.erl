@@ -1,18 +1,21 @@
 -module(rtm_fsm_sup).
 -behaviour(supervisor).
 
--export([start_link/1]).
+-export([start_link/0, start_child/1]).
 -export([init/1]).
 
-start_link(Port) ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, Port).
+start_link() ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, ok).
 
-init(Port) ->
+start_child(Mode) ->
+  supervisor:start_child(?MODULE, [Mode]).
+
+init(ok) ->
   FsmSpec =
     {rtm_fsm,
-      {rtm_fsm, start_link, [Port]},
-      permanent,
-      2000,
+      {rtm_fsm, start_link, []},
+      temporary,
+      brutal_kill,
       worker,
       [rtm_fsm]},
-  {ok, {{one_for_one, 1, 1}, [FsmSpec]}}.
+  {ok, {{simple_one_for_one, 0, 1}, [FsmSpec]}}.

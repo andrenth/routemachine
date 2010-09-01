@@ -8,16 +8,14 @@
 -export([idle/2, connect/2, active/2, open_sent/2, open_confirm/2,
          established/2]).
 
-% Other gen_fsm exports.
--export([handle_info/3]).
-
 -include_lib("bgp.hrl").
 
-start_link(Port) ->
-  gen_fsm:start_link(?MODULE, Port, []).
+start_link(Establishment) ->
+  gen_fsm:start_link(?MODULE, Establishment, []).
 
-init(Port) ->
-  Session = #session{listen_port     = Port,
+init(Establishment) ->
+  io:format("Starting FSM ~w~n", [self()]),
+  Session = #session{establishment   = Establishment,
                      hold_time       = ?BGP_TIMER_HOLD,
                      keepalive_time  = ?BGP_TIMER_KEEPALIVE,
                      conn_retry_time = ?BGP_TIMER_CONN_RETRY},
@@ -29,12 +27,20 @@ init(Port) ->
 
 % Idle state.
 
-idle(start, Session) ->
+idle(start, #session{establishment = Establishment} = Session) ->
   ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
-  {Event, NewSession} =
-    connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
-  gen_fsm:send_event(self(), Event),
-  {next_state, connect, NewSession};
+  NewSession = Session#session{conn_retry_timer = ConnRetry},
+  case Establishment of
+    active ->
+      io:format("FSM:idle/start(active)~n"),
+      EstabSession = connect_to_peer(NewSession),
+      {next_state, connect, EstabSession};
+    {passive, Socket} ->
+      io:format("FSM:idle/start(passive)~n"),
+      {ok, Pid} = rtm_server_sup:start_child(self()),
+      gen_tcp:controlling_process(Socket, Pid),
+      {next_state, active, NewSession#session{server = Pid}}
+  end;
 
 idle(_Error, Session) ->
   % TODO exponential backoff for reconnection attempt.
@@ -59,8 +65,8 @@ connect(tcp_open_failed, Session) ->
 
 connect({timeout, _Ref, conn_retry}, Session) ->
   ConnRetry = restart_timer(conn_retry, Session),
-  connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
-  {next_state, connect, Session};
+  NewSession = connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
+  {next_state, connect, NewSession};
 
 connect(_Event, Session) ->
   NewSession = release_resources(Session),
@@ -124,6 +130,15 @@ open_sent({timeout, _Ref, hold}, Session) ->
   release_resources(Session),
   {next_state, idle, Session};
 
+open_sent(tcp_closed, Session) ->
+  close_connection(Session),
+  ConnRetry = restart_timer(conn_retry, Session),
+  {next_state, active, Session#session{conn_retry_timer = ConnRetry}};
+
+open_sent(tcp_fatal, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession};
+
 open_sent(_Event, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
   release_resources(Session),
@@ -154,6 +169,14 @@ open_confirm({timeout, keepalive}, Session) ->
   KeepAlive = restart_timer(keepalive, Session),
   rtm_msg:send_keepalive(Session),
   {next_state, open_confirm, Session#session{keepalive_timer = KeepAlive}};
+
+open_confirm(tcp_closed, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession};
+
+open_confirm(tcp_fatal, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession};
 
 open_confirm(_Event, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
@@ -202,43 +225,19 @@ established({timeout, keepalive}, Session) ->
   rtm_msg:send_keepalive(Session),
   {next_state, established, Session#session{keepalive_timer = KeepAlive}};
 
+established(tcp_closed, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession};
+
+established(tcp_fatal, Session) ->
+  NewSession = release_resources(Session),
+  {next_state, idle, NewSession};
+
 established(_Event, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
   release_resources(Session),
   % TODO delete_routes(Session),
   {next_state, idle, Session}.
-
-
-% Other callbacks.
-
-% Connection closed by peer while in different states.
-
-handle_info({tcp_closed, _Socket}, open_sent, Session) ->
-  close_connection(Session),
-  ConnRetry = restart_timer(conn_retry, Session),
-  {next_state, active, Session#session{conn_retry_timer = ConnRetry}};
-
-handle_info({tcp_error, _Socket}, open_sent, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
-
-
-handle_info({tcp_closed, _Socket}, open_confirm, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
-
-handle_info({tcp_error, _Socket}, open_confirm, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
-
-
-handle_info({tcp_closed, _Socket}, established, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession};
-
-handle_info({tcp_error, _Socket}, established, Session) ->
-  NewSession = release_resources(Session),
-  {next_state, idle, NewSession}.
 
 
 %
@@ -268,24 +267,28 @@ clear_timer(Timer) ->
 
 % Instead of implementing collision detection, just make sure there's
 % only one connection per peer. This is what OpenBGPd does.
-connect_to_peer(#session{socket = undefined} = Session) ->
-  ListenPort = Session#session.listen_port,
-  LocalAddr  = Session#session.local_addr,
-  RemoteAddr = Session#session.remote_addr,
-  {ok, _Pid} = rtm_acceptor_sup:start_child(self(), ListenPort),
+connect_to_peer(#session{server      = undefined,
+                         local_addr  = LocalAddr,
+                         remote_addr = RemoteAddr} = Session) ->
+  {ok, Pid} = rtm_server_sup:start_child(self()),
   SockOpts = [binary, {ip, LocalAddr}, {packet, raw}, {active, false}],
-  case gen_tcp:connect(RemoteAddr, ListenPort, SockOpts) of
-    {ok, Socket}     -> {tcp_open, Session#session{socket = Socket}};
-    {error, _Reason} -> {tcp_open_failed, Session}
+  case gen_tcp:connect(RemoteAddr, ?BGP_PORT, SockOpts) of
+    {ok, Socket}     ->
+      gen_tcp:controlling_process(Socket, Pid),
+      gen_fsm:send_event(self(), tcp_open),
+      Session#session{server = Pid};
+    {error, _Reason} ->
+      gen_fsm:send_event(self(), tcp_open_failed),
+      Session
   end;
 
-% Already has a socket; ignore.
+% There's already an associated server; ignore.
 connect_to_peer(Session) ->
   Session.
 
-close_connection(#session{socket = Socket} = Session) ->
-  gen_tcp:close(Socket),
-  Session#session{socket = undefined}.
+close_connection(#session{server = Server} = Session) ->
+  gen_server:cast(Server, close_connection),
+  Session#session{server = undefined}.
 
 release_resources(Session) ->
   NewSession = close_connection(Session),
@@ -294,11 +297,10 @@ release_resources(Session) ->
   clear_timer(Session#session.keepalive_timer),
   NewSession.
 
-check_peer(#session{socket = Socket, remote_addr = RemoteAddr}) ->
-  {ok, {Addr, _Port}} = inet:peername(Socket),
-  case Addr of
-    RemoteAddr -> ok;
-    _          -> bad_peer
+check_peer(#session{server = Server, remote_addr = RemoteAddr}) ->
+  case gen_server:call(Server, peer_addr) of
+    {ok, RemoteAddr} -> ok;
+    {ok, _}          -> bad_peer
   end.
 
 negotiate_hold_time(LocalHoldTime, RemoteHoldTime) ->

@@ -1,3 +1,5 @@
+-define(BGP_PORT, 179).
+
 % Lengths.
 -define(BGP_HEADER_LENGTH,    19).
 -define(BGP_MAX_MSG_LEN,    4096).
@@ -201,9 +203,8 @@
 %
 
 -record(session, {
-  socket,
-  listen_port,
-  message,
+  establishment,
+  server,
   type,
   local_asn,
   remote_asn,

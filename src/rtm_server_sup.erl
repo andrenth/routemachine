@@ -8,9 +8,7 @@ start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, ok).
 
 start_child(FSM) ->
-  {ok, Pid} = supervisor:start_child(?MODULE, [FSM]),
-  io:format("Starting new server child ~w~n", [Pid]),
-  {ok, Pid}.
+  supervisor:start_child(?MODULE, [FSM]).
 
 init(ok) ->
   ServerSpec =

@@ -3,13 +3,13 @@
 -export([start_link/1]).
 -export([init/1]).
 
-start_link(Port) ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, Port).
+start_link(ListenPort) ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, ListenPort).
 
-init(Port) ->
+init(ListenPort) ->
   AcceptorSupSpec =
     {rtm_acceptor_sup,
-      {rtm_acceptor_sup, start_link, []},
+      {rtm_acceptor_sup, start_link, [ListenPort]},
       permanent,
       infinity,
       supervisor,
@@ -23,7 +23,7 @@ init(Port) ->
       [rtm_server_sup]},
   FsmSupSpec =
     {rtm_fsm_sup,
-      {rtm_fsm_sup, start_link, [Port]},
+      {rtm_fsm_sup, start_link, []},
       permanent,
       infinity,
       supervisor,

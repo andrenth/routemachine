@@ -1,16 +1,16 @@
 -module(rtm_server).
 -behavior(gen_server).
 
--export([start_link/0]).
+-export([start_link/1]).
 
 % Exports for gen_server.
-%-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-%         terminate/2, code_change/3]).
--export([init/1, handle_info/2, terminate/2]).
+-export([init/1, handle_info/2, handle_call/3, handle_cast/2, terminate/2,
+         code_change/3]).
 
 -include_lib("bgp.hrl").
 
 -record(state, {
+  socket,
   data,
   data_proc,
   msg_type,
@@ -18,8 +18,8 @@
   fsm
 }).
 
-start_link() ->
-  gen_server:start_link(?MODULE, ok, []).
+start_link(FSM) ->
+  gen_server:start_link(?MODULE, FSM, []).
 
 
 %
@@ -36,14 +36,34 @@ handle_info({tcp, Socket, Bin},
             #state{data = Data, data_proc = Assemble} = State) ->
   io:format("Got data on socket~n", []),
   inet:setopts(Socket, [{active, once}]),
-  NewState = Assemble(State#state{data = list_to_binary([Data, Bin])}),
-  {noreply, NewState};
+  NewState = State#state{socket = Socket, data = list_to_binary([Data, Bin])},
+  {noreply, Assemble(NewState)};
 
-handle_info({tcp_closed, _Socket}, State) ->
-  {stop, normal, State}.
+handle_info({tcp_closed, _Socket}, #state{fsm = FSM} = State) ->
+  gen_fsm:send_event(FSM, tcp_closed),
+  {stop, normal, State#state{socket = undefined}};
+
+handle_info({tcp_error, _Socket}, #state{fsm = FSM} = State) ->
+  gen_fsm:send_event(FSM, tcp_fatal),
+  {stop, normal, State#state{socket = undefined}}.
+
+handle_call(peername, _From, #state{socket = Socket} = State) ->
+  Reply = case inet:peername(Socket) of
+    {ok, {Addr, _Port}} -> {ok, Addr};
+    {error, Error} -> {error, Error}
+  end,
+  {reply, Reply, State}.
+
+handle_cast(close_connection, #state{socket = Socket} = State) ->
+  io:format("Closing connection with peer, stopping server ~w~n", [self()]),
+  gen_tcp:close(Socket),
+  {stop, normal, State#state{socket = undefined}}.
 
 terminate(_Reason, _State) ->
   ok.
+
+code_change(_OldVsn, State, _Extra) ->
+  {ok, State}.
 
 %
 % Internal functions.
