@@ -44,17 +44,20 @@ validate_marker(#bgp_header{}) ->
   ok. % TODO Handle auth.
 
 validate_msg_len(#bgp_header{msg_type = ?BGP_TYPE_OPEN, msg_len = Len})
-  when Len >= ?BGP_OPEN_MIN_LENGTH andalso Len =< ?BGP_MAX_MSG_LEN ->
-    ok;
+                 when Len >= ?BGP_OPEN_MIN_LENGTH andalso
+                      Len =< ?BGP_MAX_MSG_LEN ->
+  ok;
 validate_msg_len(#bgp_header{msg_type = ?BGP_TYPE_UPDATE, msg_len = Len})
-  when Len >= ?BGP_UPDATE_MIN_LENGTH andalso Len =< ?BGP_MAX_MSG_LEN ->
-    ok;
+                 when Len >= ?BGP_UPDATE_MIN_LENGTH andalso
+                      Len =< ?BGP_MAX_MSG_LEN ->
+  ok;
 validate_msg_len(#bgp_header{msg_type = ?BGP_TYPE_NOTIFICATION, msg_len = Len})
-  when Len >= ?BGP_NOTIFICATION_MIN_LENGTH andalso Len =< ?BGP_MAX_MSG_LEN ->
-    ok;
+                 when Len >= ?BGP_NOTIFICATION_MIN_LENGTH andalso
+                      Len =< ?BGP_MAX_MSG_LEN ->
+  ok;
 validate_msg_len(#bgp_header{msg_type = ?BGP_TYPE_KEEPALIVE, msg_len = Len})
-  when Len =:= ?BGP_HEADER_LENGTH ->
-    ok;
+                 when Len =:= ?BGP_HEADER_LENGTH ->
+  ok;
 validate_msg_len(#bgp_header{msg_len = Len}) ->
   {error, {?BGP_ERR_HEADER, ?BGP_HEADER_ERR_LENGTH, <<Len:8>>}}.
 
