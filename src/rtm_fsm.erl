@@ -112,8 +112,8 @@ open_sent(stop, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
-open_sent(open_received, Session) ->
-  case rtm_msg:parse_open(Session) of
+open_sent({open_received, Bin}, Session) ->
+  case rtm_parser:parse_open(Bin) of
     {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
       rtm_msg:send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
@@ -157,7 +157,8 @@ open_confirm({timeout, hold}, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {next_state, idle, Session};
 
-open_confirm(notification_received, Session) ->
+open_confirm({notification_received, _Bin}, Session) ->
+  % TODO parse notification.
   {next_state, idle, Session};
 
 open_confirm({timeout, keepalive}, Session) ->
@@ -185,12 +186,12 @@ established(stop, Session) ->
   rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
   {stop, stop, Session};
 
-established(update_received, Session) ->
+established({update_received, Bin, Len}, Session) ->
   Hold = restart_timer(hold, Session),
   NewSession = Session#session{hold_timer = Hold},
-  % TODO handle update - section 6.3.
-  case rtm_msg:parse_update(NewSession) of
-    ok ->
+  case rtm_parser:parse_update(Bin, Len) of
+    {ok, _Msg} ->
+      % TODO handle update - section 6.3.
       {next_state, established, NewSession};
     {error, _Error} ->
       rtm_msg:send_notification(NewSession, ?BGP_ERR_UPDATE),
@@ -201,7 +202,8 @@ established(keepalive_received, Session) ->
   Hold = restart_timer(hold, Session),
   {next_state, established, Session#session{hold_timer = Hold}};
 
-established(notification_received, Session) ->
+established({notification_received, _Bin}, Session) ->
+  % TODO parse notification.
   {stop, normal, Session};
 
 established({timeout, hold}, Session) ->

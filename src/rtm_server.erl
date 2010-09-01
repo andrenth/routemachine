@@ -69,38 +69,46 @@ code_change(_OldVsn, State, _Extra) ->
 % Internal functions.
 %
 
-process_header(#state{data = Data} = State)
+process_header(#state{socket = Socket, data = Data} = State)
                when bit_size(Data) >= ?BGP_HEADER_LENGTH * 8 ->
-  {Hdr, Rest} = split_binary(Data, ?BGP_HEADER_LENGTH),
+  {Bin, Rest} = split_binary(Data, ?BGP_HEADER_LENGTH),
   NewState = State#state{data = Rest,
                          data_proc = fun process_message/1},
-  io:format("Header received: ~w~n", [Hdr]),
-  Type = 0, Length = 39 - ?BGP_HEADER_LENGTH,
-  process_message(NewState#state{msg_type = Type, msg_len = Length});
-  %case rtm_parser:parse_header(Header) of
-  %  {ok, Length, Type} ->
-  %    process_message(NewState#state{msg_type = Type, msg_len = Length});
-  %  {error, _Err} -> error % XXX
-  %end;
+  io:format("Header received: ~w~n", [Bin]),
+  case rtm_parser:parse_header(Bin) of
+    {ok, Hdr} ->
+      #bgp_header{msg_type = Type, msg_len = Len} = Hdr,
+      process_message(NewState#state{msg_type = Type, msg_len = Len});
+    {error, Error} ->
+      rtm_msg:send_notification(Socket, Error)
+  end;
 
 process_header(State) ->
   io:format("Incomplete header~n", []),
   State.
 
 
-process_message(#state{data = Data, msg_len = Length, fsm = FSM} = State)
-                when size(Data) >= Length ->
-  {Msg, Rest} = split_binary(Data, Length),
+process_message(#state{data     = Data,
+                       msg_type = Type,
+                       msg_len  = Length,
+                       fsm      = FSM} = State) when size(Data) >= Length ->
+  {Bin, Rest} = split_binary(Data, Length),
   NewState = State#state{data = Rest,
                          data_proc = fun process_header/1},
-  io:format("Message received: ~w~n", [Msg]),
-  % TODO call into the FSM.
+  io:format("Message received: ~w~n", [Bin]),
   io:format("Sending event to FSM ~p~n", [FSM]),
+  Event = receipt_event(Type, Bin, Length),
+  gen_fsm:send_event(FSM, Event),
   process_header(NewState);
-  %case rtm_parser:parse_message(Msg, Type) of
-  %  % TODO
-  %end;
 
 process_message(State) ->
   io:format("Incomplete message~n", []),
   State.
+
+receipt_event(Type, Bin, Len) ->
+  case Type of
+    ?BGP_TYPE_OPEN         -> {open_received, Bin};
+    ?BGP_TYPE_UPDATE       -> {update_received, Bin, Len};
+    ?BGP_TYPE_NOTIFICATION -> {notification_received, Bin};
+    ?BGP_TYPE_KEEPALIVE    -> keepalive_received
+  end.
