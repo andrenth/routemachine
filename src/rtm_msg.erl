@@ -3,6 +3,8 @@
 
 -export([validate_header/1, validate_open/1, validate_update/2,
          validate_notification/1]).
+-export([build_open/3, build_notification/2, build_notification/3,
+         build_keepalive/0]).
 
 %
 % Validations.
@@ -284,3 +286,30 @@ validate(Rec, [Validator | Rest]) ->
     ok -> validate(Rec, Rest);
     {error, Error} -> {error, Error}
   end.
+
+%
+% Message construction.
+%
+
+build_header(MessageLength) ->
+  MessageType = ?BGP_TYPE_OPEN,
+  Marker = ?BGP_HEADER_MARKER,
+  ?BGP_HEADER_PATTERN.
+
+build_open(ASN, HoldTime, _LocalAddr) ->
+  Version = 4,
+  BGPId = 1, % TODO
+  OptParamsLen = 0, % TODO
+  OptParams = <<>>,
+  Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
+  list_to_binary([build_header(Len), ?BGP_OPEN_PATTERN]).
+
+build_notification(ErrorCode, ErrorSubCode) ->
+  build_notification(ErrorCode, ErrorSubCode, <<>>).
+
+build_notification(ErrorCode, ErrorSubCode, ErrorData) ->
+  Len = size(ErrorCode) + size(ErrorSubCode) + size(ErrorData),
+  list_to_binary([build_header(Len), ?BGP_NOTIFICATION_PATTERN]).
+
+build_keepalive() ->
+  build_header(?BGP_HEADER_LENGTH).
