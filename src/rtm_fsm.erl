@@ -262,6 +262,8 @@ restart_timer(hold, #session{hold_time = HoldTime} = Session) ->
 start_timer(Name, Time) ->
   gen_fsm:start_timer(Time, Name).
 
+clear_timer(undefined) ->
+  false;
 clear_timer(Timer) ->
   gen_fsm:cancel_timer(Timer).
 
