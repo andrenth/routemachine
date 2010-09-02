@@ -1,0 +1,7 @@
+{application, routemachine,
+  [{description, "RouteMachine"},
+   {vsn, "0"},
+   {registered, []},
+   {applications, [kernel, stdlib]},
+   {mod, {rtm_app, []}},
+   {env, []}]}.
