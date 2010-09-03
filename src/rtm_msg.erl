@@ -290,8 +290,7 @@ validate(Rec, [Validator | Rest]) ->
 % Message construction.
 %
 
-build_header(MessageLength) ->
-  MessageType = ?BGP_TYPE_OPEN,
+build_header(MessageType, MessageLength) ->
   Marker = ?BGP_HEADER_MARKER,
   ?BGP_HEADER_PATTERN.
 
@@ -301,12 +300,13 @@ build_open(ASN, HoldTime, _LocalAddr) ->
   OptParamsLen = 0, % TODO
   OptParams = <<>>,
   Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
-  list_to_binary([build_header(Len), ?BGP_OPEN_PATTERN]).
+  list_to_binary([build_header(?BGP_TYPE_OPEN, Len), ?BGP_OPEN_PATTERN]).
 
 build_notification({ErrorCode, ErrorSubCode, ErrorData}) ->
   Msg = ?BGP_NOTIFICATION_PATTERN,
   Len = ?BGP_HEADER_LENGTH + size(Msg),
-  list_to_binary([build_header(Len), ?BGP_NOTIFICATION_PATTERN]);
+  list_to_binary([build_header(?BGP_TYPE_NOTIFICATION, Len),
+                  ?BGP_NOTIFICATION_PATTERN]);
 
 build_notification({ErrorCode, ErrorSubCode}) ->
   build_notification({ErrorCode, ErrorSubCode, <<>>});
@@ -315,4 +315,4 @@ build_notification(ErrorCode) ->
   build_notification({ErrorCode, 0, <<>>}).
 
 build_keepalive() ->
-  build_header(?BGP_HEADER_LENGTH).
+  build_header(?BGP_TYPE_KEEPALIVE, ?BGP_HEADER_LENGTH).
