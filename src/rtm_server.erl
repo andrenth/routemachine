@@ -82,7 +82,8 @@ process_header(#state{data = Data} = State)
   case rtm_parser:parse_header(Bin) of
     {ok, Hdr} ->
       #bgp_header{msg_type = Type, msg_len = Len} = Hdr,
-      process_message(NewState#state{msg_type = Type, msg_len = Len});
+      MsgLen = Len - ?BGP_HEADER_LENGTH,
+      process_message(NewState#state{msg_type = Type, msg_len = MsgLen});
     {error, Error} ->
       send_notification(Error),
       NewState
