@@ -94,6 +94,20 @@ active(tcp_open, Session) ->
       {next_state, active, NewSession}
   end;
 
+active({open_received, Bin}, Session) ->
+  clear_timer(Session#session.conn_retry_timer),
+  case rtm_parser:parse_open(Bin) of
+    {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
+      send_open(Session),
+      send_keepalive(Session),
+      NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
+      NewSession = start_timers(Session, NewHoldTime),
+      {next_state, open_confirm, NewSession#session{remote_asn = ASN}};
+    {error, Error} ->
+      send_notification(Session, Error),
+      {stop, normal, Session}
+  end;
+
 active({timeout, _Ref, conn_retry}, Session) ->
   ConnRetry = restart_timer(conn_retry, Session),
   NewSession = connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
