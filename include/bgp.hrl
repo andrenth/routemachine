@@ -205,7 +205,6 @@
 -record(session, {
   establishment,
   server,
-  type,
   local_asn,
   remote_asn,
   local_addr,
