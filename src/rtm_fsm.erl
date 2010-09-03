@@ -46,6 +46,7 @@ idle(start, #session{establishment = Establishment} = Session) ->
   end;
 
 idle(_Error, Session) ->
+  io:format("FSM:idle/error(~p)~n", [_Error]),
   % TODO exponential backoff for reconnection attempt.
   NewSession = close_connection(Session),
   {next_state, idle, NewSession}.
@@ -54,33 +55,40 @@ idle(_Error, Session) ->
 % Connect state.
 
 connect(start, Session) ->
+  io:format("FSM:connect/start~n"),
   {next_state, connect, Session};
 
 connect(tcp_open, Session) ->
+  io:format("FSM:connect/tcp_open~n"),
   clear_timer(Session#session.conn_retry_timer),
   send_open(Session),
   {next_state, active, Session};
 
 connect(tcp_open_failed, Session) ->
+  io:format("FSM:connect/tcp_open_failed~n"),
   ConnRetry = restart_timer(conn_retry, Session),
   NewSession = close_connection(Session),
   {next_state, active, NewSession#session{conn_retry_timer = ConnRetry}};
 
 connect({timeout, _Ref, conn_retry}, Session) ->
+  io:format("FSM:connect/conn_retry_timeout~n"),
   ConnRetry = restart_timer(conn_retry, Session),
   NewSession = connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
   {next_state, connect, NewSession};
 
 connect(_Event, Session) ->
+  io:format("FSM:connect/other(~p)~n", [_Event]),
   {stop, normal, Session}.
 
 
 % Active state.
 
 active(start, Session) ->
+  io:format("FSM:active/start~n"),
   {next_state, active, Session};
 
 active(tcp_open, Session) ->
+  io:format("FSM:active/tcp_open~n"),
   case check_peer(Session) of
     ok ->
       clear_timer(Session#session.conn_retry_timer),
@@ -95,6 +103,7 @@ active(tcp_open, Session) ->
   end;
 
 active({open_received, Bin}, Session) ->
+  io:format("FSM:active/open_received~n"),
   clear_timer(Session#session.conn_retry_timer),
   case rtm_parser:parse_open(Bin) of
     {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
@@ -109,24 +118,29 @@ active({open_received, Bin}, Session) ->
   end;
 
 active({timeout, _Ref, conn_retry}, Session) ->
+  io:format("FSM:active/conn_retry_timeout~n"),
   ConnRetry = restart_timer(conn_retry, Session),
   NewSession = connect_to_peer(Session#session{conn_retry_timer = ConnRetry}),
   {next_state, connect, NewSession};
 
 active(_Event, Session) ->
+  io:format("FSM:active/other(~p)~n", [_Event]),
   {stop, normal, Session}.
 
 
 % OpenSent state
 
 open_sent(start, Session) ->
+  io:format("FSM:open_sent/start~n"),
   {next_state, open_sent, Session};
 
 open_sent(stop, Session) ->
+  io:format("FSM:open_sent/stop~n"),
   send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
 open_sent({open_received, Bin}, Session) ->
+  io:format("FSM:open_sent/open_received~n"),
   case rtm_parser:parse_open(Bin) of
     {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
       send_keepalive(Session),
@@ -139,10 +153,12 @@ open_sent({open_received, Bin}, Session) ->
   end;
 
 open_sent({timeout, _Ref, hold}, Session) ->
+  io:format("FSM:open_sent/hold_timeout~n"),
   send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {stop, normal, Session};
 
 open_sent(tcp_closed, Session) ->
+  io:format("FSM:open_sent/tcp_closed~n"),
   close_connection(Session),
   ConnRetry = restart_timer(conn_retry, Session),
   {next_state, active, Session#session{conn_retry_timer = ConnRetry}};
@@ -151,6 +167,7 @@ open_sent(tcp_fatal, Session) ->
   {stop, normal, Session};
 
 open_sent(_Event, Session) ->
+  io:format("FSM:open_sent/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
   {stop, normal, Session}.
 
@@ -158,35 +175,44 @@ open_sent(_Event, Session) ->
 % OpenConfirm state.
 
 open_confirm(start, Session) ->
+  io:format("FSM:open_confirm/start~n"),
   {next_state, open_confirm, Session};
 
 open_confirm(stop, Session) ->
+  io:format("FSM:open_confirm/stop~n"),
   send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
 open_confirm(keepalive_received, Session) ->
+  io:format("FSM:open_confirm/keepalive_received~n"),
   {next_state, established, Session};
 
 open_confirm({timeout, hold}, Session) ->
+  io:format("FSM:open_confirm/hold_timeout~n"),
   send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {next_state, idle, Session};
 
 open_confirm({notification_received, _Bin}, Session) ->
+  io:format("FSM:open_confirm/notification_received~n"),
   % TODO parse notification.
   {next_state, idle, Session};
 
 open_confirm({timeout, keepalive}, Session) ->
+  io:format("FSM:open_confirm/keepalive_timeout~n"),
   KeepAlive = restart_timer(keepalive, Session),
   send_keepalive(Session),
   {next_state, open_confirm, Session#session{keepalive_timer = KeepAlive}};
 
 open_confirm(tcp_closed, Session) ->
+  io:format("FSM:open_confirm/tcp_closed~n"),
   {stop, normal, Session};
 
 open_confirm(tcp_fatal, Session) ->
+  io:format("FSM:open_confirm/tcp_fatal~n"),
   {stop, normal, Session};
 
 open_confirm(_Event, Session) ->
+  io:format("FSM:open_confirm/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
   {stop, normal, Session}.
 
@@ -194,13 +220,16 @@ open_confirm(_Event, Session) ->
 % Established state.
 
 established(start, Session) ->
+  io:format("FSM:established/start~n"),
   {next_state, established, Session};
 
 established(stop, Session) ->
+  io:format("FSM:established/stop~n"),
   send_notification(Session, ?BGP_ERR_CEASE),
   {stop, stop, Session};
 
 established({update_received, Bin, Len}, Session) ->
+  io:format("FSM:established/update_received~n"),
   Hold = restart_timer(hold, Session),
   NewSession = Session#session{hold_timer = Hold},
   case rtm_parser:parse_update(Bin, Len) of
@@ -213,29 +242,36 @@ established({update_received, Bin, Len}, Session) ->
   end;
 
 established(keepalive_received, Session) ->
+  io:format("FSM:established/keepalive_received~n"),
   Hold = restart_timer(hold, Session),
   {next_state, established, Session#session{hold_timer = Hold}};
 
 established({notification_received, _Bin}, Session) ->
+  io:format("FSM:established/notification_received~n"),
   % TODO parse notification.
   {stop, normal, Session};
 
 established({timeout, hold}, Session) ->
+  io:format("FSM:established/hold_timeout~n"),
   send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {stop, normal, Session};
 
 established({timeout, keepalive}, Session) ->
+  io:format("FSM:established/keepalive_timeout~n"),
   KeepAlive = restart_timer(keepalive, Session),
   send_keepalive(Session),
   {next_state, established, Session#session{keepalive_timer = KeepAlive}};
 
 established(tcp_closed, Session) ->
+  io:format("FSM:established/tcp_closed~n"),
   {stop, normal, Session};
 
 established(tcp_fatal, Session) ->
+  io:format("FSM:established/tcp_fatal~n"),
   {stop, normal, Session};
 
 established(_Event, Session) ->
+  io:format("FSM:established/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
   % TODO delete_routes(Session),
   {stop, normal, Session}.
