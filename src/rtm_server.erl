@@ -73,7 +73,7 @@ code_change(_OldVsn, State, _Extra) ->
 % Internal functions.
 %
 
-process_header(#state{socket = Socket, data = Data} = State)
+process_header(#state{data = Data} = State)
                when bit_size(Data) >= ?BGP_HEADER_LENGTH * 8 ->
   {Bin, Rest} = split_binary(Data, ?BGP_HEADER_LENGTH),
   NewState = State#state{data = Rest,
@@ -84,7 +84,8 @@ process_header(#state{socket = Socket, data = Data} = State)
       #bgp_header{msg_type = Type, msg_len = Len} = Hdr,
       process_message(NewState#state{msg_type = Type, msg_len = Len});
     {error, Error} ->
-      rtm_msg:send_notification(Socket, Error)
+      send_notification(Error),
+      NewState
   end;
 
 process_header(State) ->
@@ -116,3 +117,6 @@ receipt_event(Type, Bin, Len) ->
     ?BGP_TYPE_NOTIFICATION -> {notification_received, Bin};
     ?BGP_TYPE_KEEPALIVE    -> keepalive_received
   end.
+
+send_notification(Error) ->
+  gen_server:cast(self(), {send_msg, rtm_msg:build_notification(Error)}).

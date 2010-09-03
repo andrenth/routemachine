@@ -3,8 +3,7 @@
 
 -export([validate_header/1, validate_open/1, validate_update/2,
          validate_notification/1]).
--export([build_open/3, build_notification/2, build_notification/3,
-         build_keepalive/0]).
+-export([build_open/3, build_notification/1, build_keepalive/0]).
 
 %
 % Validations.
@@ -304,12 +303,16 @@ build_open(ASN, HoldTime, _LocalAddr) ->
   Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
   list_to_binary([build_header(Len), ?BGP_OPEN_PATTERN]).
 
-build_notification(ErrorCode, ErrorSubCode) ->
-  build_notification(ErrorCode, ErrorSubCode, <<>>).
+build_notification({ErrorCode, ErrorSubCode, ErrorData}) ->
+  Msg = ?BGP_NOTIFICATION_PATTERN,
+  Len = ?BGP_HEADER_LENGTH + size(Msg),
+  list_to_binary([build_header(Len), ?BGP_NOTIFICATION_PATTERN]);
 
-build_notification(ErrorCode, ErrorSubCode, ErrorData) ->
-  Len = size(ErrorCode) + size(ErrorSubCode) + size(ErrorData),
-  list_to_binary([build_header(Len), ?BGP_NOTIFICATION_PATTERN]).
+build_notification({ErrorCode, ErrorSubCode}) ->
+  build_notification({ErrorCode, ErrorSubCode, <<>>});
+
+build_notification(ErrorCode) ->
+  build_notification({ErrorCode, 0, <<>>}).
 
 build_keepalive() ->
   build_header(?BGP_HEADER_LENGTH).

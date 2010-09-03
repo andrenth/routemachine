@@ -324,14 +324,8 @@ send_open(#session{server     = Server,
                    local_addr = LocalAddr}) ->
   send(Server, rtm_msg:build_open(ASN, HoldTime, LocalAddr)).
 
-send_notification(#session{server = Server}, {Code, SubCode, Data}) ->
-  send(Server, rtm_msg:build_notification(Code, SubCode, Data));
-
-send_notification(Session, {Code, SubCode}) ->
-  send_notification(Session, {Code, SubCode, <<>>});
-
-send_notification(Session, Code) ->
-  send_notification(Session, {Code, 0, <<>>}).
+send_notification(#session{server = Server}, Error) ->
+  send(Server, rtm_msg:build_notification(Error)).
 
 send_keepalive(#session{server = Server}) ->
   send(Server, rtm_msg:build_keepalive()).
