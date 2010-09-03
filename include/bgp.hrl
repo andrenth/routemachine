@@ -195,7 +195,7 @@
 
 -define(BGP_NLRI_PATTERN,
   << RouteLength : 8,
-     RoutePrefix : RouteLength/binary,
+     RoutePrefix : RouteLength,
      OtherRoutes/binary >>).
 
 %
