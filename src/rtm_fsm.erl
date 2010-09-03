@@ -303,8 +303,9 @@ restart_timer(hold, #session{hold_time = HoldTime} = Session) ->
     false -> undefined
   end.
 
+% Expects Time to be in seconds.
 start_timer(Name, Time) ->
-  gen_fsm:start_timer(Time, Name).
+  gen_fsm:start_timer(timer:seconds(Time), Name).
 
 clear_timer(undefined) ->
   false;

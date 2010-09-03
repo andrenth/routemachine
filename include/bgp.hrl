@@ -72,14 +72,14 @@
 -define(BGP_UPDATE_ERR_NETWORK,      10).
 -define(BGP_UPDATE_ERR_AS_PATH,      11).
 
-% BGP timers (in milliseconds).
--define(BGP_TIMER_CONN_RETRY,       120000).
--define(BGP_TIMER_HOLD,              90000).
--define(BGP_TIMER_HOLD_MIN,          30000).
--define(BGP_TIMER_KEEPALIVE,         30000).
+% BGP timers.
+-define(BGP_TIMER_CONN_RETRY,       120).
+-define(BGP_TIMER_HOLD,              90).
+-define(BGP_TIMER_HOLD_MIN,          30).
+-define(BGP_TIMER_KEEPALIVE,         30).
 
--define(BGP_INTERVAL_MIN_AS_ORIG,    15000).
--define(BGP_INTERVAL_MIN_ROUTE_ADV,  30000).
+-define(BGP_INTERVAL_MIN_AS_ORIG,    15).
+-define(BGP_INTERVAL_MIN_ROUTE_ADV,  30).
 
 %
 % Messages
