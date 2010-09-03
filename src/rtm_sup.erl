@@ -1,15 +1,15 @@
 -module(rtm_sup).
 
--export([start_link/1]).
+-export([start_link/2]).
 -export([init/1]).
 
-start_link(ListenPort) ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, ListenPort).
+start_link(ListenPort, Peers) ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, {ListenPort, Peers}).
 
-init(ListenPort) ->
+init({ListenPort, Peers}) ->
   AcceptorSupSpec =
     {rtm_acceptor_sup,
-      {rtm_acceptor_sup, start_link, [ListenPort]},
+      {rtm_acceptor_sup, start_link, [ListenPort, Peers]},
       permanent,
       infinity,
       supervisor,

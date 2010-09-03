@@ -7,8 +7,8 @@
 start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, ok).
 
-start_child(Mode) ->
-  supervisor:start_child(?MODULE, [Mode]).
+start_child(Session) ->
+  supervisor:start_child(?MODULE, [Session]).
 
 init(ok) ->
   FsmSpec =

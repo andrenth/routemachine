@@ -13,15 +13,11 @@
 
 -include_lib("bgp.hrl").
 
-start_link(Establishment) ->
-  gen_fsm:start_link(?MODULE, Establishment, []).
+start_link(Session) ->
+  gen_fsm:start_link(?MODULE, Session, []).
 
-init(Establishment) ->
+init(Session) ->
   io:format("Starting FSM ~w~n", [self()]),
-  Session = #session{establishment   = Establishment,
-                     hold_time       = ?BGP_TIMER_HOLD,
-                     keepalive_time  = ?BGP_TIMER_KEEPALIVE,
-                     conn_retry_time = ?BGP_TIMER_CONN_RETRY},
   {ok, idle, Session}.
 
 %
@@ -373,7 +369,9 @@ send_open(#session{server     = Server,
                    local_asn  = ASN,
                    hold_time  = HoldTime,
                    local_addr = LocalAddr}) ->
-  send(Server, rtm_msg:build_open(ASN, HoldTime, LocalAddr)).
+  Msg = rtm_msg:build_open(ASN, HoldTime, LocalAddr),
+  io:format("Sending OPEN message: ~p~n", [Msg]),
+  send(Server, Msg).
 
 send_notification(#session{server = Server}, Error) ->
   send(Server, rtm_msg:build_notification(Error)).

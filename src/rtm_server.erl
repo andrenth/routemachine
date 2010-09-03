@@ -33,11 +33,11 @@ init(FSM) ->
   {ok, State}.
 
 handle_info({tcp, Socket, Bin},
-            #state{data = Data, data_proc = Assemble} = State) ->
+            #state{data = Data, data_proc = Proc} = State) ->
   io:format("Got data on socket~n", []),
   inet:setopts(Socket, [{active, once}]),
   NewState = State#state{socket = Socket, data = list_to_binary([Data, Bin])},
-  {noreply, Assemble(NewState)};
+  {noreply, Proc(NewState)};
 
 handle_info({tcp_closed, _Socket}, #state{fsm = FSM} = State) ->
   gen_fsm:send_event(FSM, tcp_closed),
@@ -99,8 +99,7 @@ process_message(#state{data     = Data,
                        msg_len  = Length,
                        fsm      = FSM} = State) when size(Data) >= Length ->
   {Bin, Rest} = split_binary(Data, Length),
-  NewState = State#state{data = Rest,
-                         data_proc = fun process_header/1},
+  NewState = State#state{data = Rest, data_proc = fun process_header/1},
   io:format("Message received: ~w~n", [Bin]),
   io:format("Sending event to FSM ~p~n", [FSM]),
   Event = receipt_event(Type, Bin, Length),

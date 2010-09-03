@@ -1,7 +1,7 @@
 -module(rtm_acceptor).
 -behavior(gen_server).
 
--export([start_link/1]).
+-export([start_link/2]).
 
 % Exports for gen_server.
 %-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -10,28 +10,42 @@
 
 -include_lib("bgp.hrl").
 
-start_link(ListenSocket) ->
-  gen_server:start_link(?MODULE, ListenSocket, []).
+-record(state, {
+  listen_socket,
+  peers
+}).
 
+
+start_link(ListenSocket, Peers) ->
+  State = #state{listen_socket = ListenSocket, peers = Peers},
+  gen_server:start_link(?MODULE, State, []).
 
 %
 % Callbacks for gen_server.
 %
 
-init(ListenSocket) ->
+init(State) ->
   io:format("Starting acceptor ~w~n", [self()]),
   process_flag(trap_exit, true),
-  {ok, ListenSocket, 0}.
+  {ok, State, 0}.
 
-handle_info(timeout, ListenSocket) ->
+handle_info(timeout, #state{listen_socket = ListenSocket,
+                            peers         = Peers} = State) ->
   {ok, Socket} = gen_tcp:accept(ListenSocket),
   io:format("Returned from accept~n", []),
-  {ok, Pid} = rtm_fsm_sup:start_child({passive, Socket}),
-  gen_tcp:controlling_process(Socket, Pid),
-  gen_fsm:send_event(Pid, start),
-  inet:setopts(Socket, [{active, once}]),
-  {noreply, ListenSocket, 0}.
+  {ok, {PeerAddr, _Port}} = inet:peername(Socket),
+  case dict:find(PeerAddr, Peers) of
+    {ok, S} ->
+      Session = S#session{establishment = {passive, Socket}},
+      {ok, Pid} = rtm_fsm_sup:start_child(Session),
+      gen_tcp:controlling_process(Socket, Pid),
+      gen_fsm:send_event(Pid, start),
+      inet:setopts(Socket, [{active, once}]);
+    error ->
+      gen_tcp:close(Socket)
+  end,
+  {noreply, State, 0}.
 
-terminate(_Reason, ListenSocket) ->
+terminate(_Reason, #state{listen_socket = ListenSocket}) ->
   gen_tcp:close(ListenSocket),
   ok.

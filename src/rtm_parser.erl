@@ -72,7 +72,9 @@ parse_opt_params(<<>>, ParsedParams) ->
   ParsedParams;
 
 parse_opt_params(?BGP_OPT_PARAMS_PATTERN, ParsedParams) ->
-  Param = parse_opt_param(ParamType, ParamValue, ParamLength),
+  % TODO For now don't parse individual opt params.
+  %Param = parse_opt_param(ParamType, ParamValue, ParamLength),
+  Param = ParamValue,
   parse_opt_params(OtherParams, [Param | ParsedParams]).
 
 parse_opt_param(?BGP_PARAM_AUTH_INFO, ?BGP_PARAM_AUTH_INFO_PATTERN, _Len) ->
