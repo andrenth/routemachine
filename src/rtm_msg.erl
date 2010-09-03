@@ -102,9 +102,9 @@ validate_opt_params(#bgp_open{}) ->
 
 validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
                        MsgLen) ->
-  case ?BGP_UPDATE_MIN_LENGTH + ULen + ALen of
-    MsgLen -> ok;
-    _      -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}}
+  case ?BGP_UPDATE_MIN_LENGTH + ULen + ALen > MsgLen + ?BGP_HEADER_LENGTH of
+    true  -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}};
+    false -> ok
   end.
 
 validate_path_attrs(#bgp_update{path_attrs = PathAttrs}) ->
