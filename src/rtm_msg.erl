@@ -189,7 +189,10 @@ validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_NEXT_HOP,
                when Val =:= 0 ->
   % XXX can any other syntatic validation be done?
   % TODO semantic validation for eBGP as in section 6.3.
-  {error, ?BGP_UPDATE_ERR_NEXT_HOP, build_attr(Attr)}.
+  {error, ?BGP_UPDATE_ERR_NEXT_HOP, build_attr(Attr)};
+
+validate_value(#bgp_path_attr{}) ->
+  ok.
 
 
 build_attr(#bgp_path_attr{optional   = Opt,
