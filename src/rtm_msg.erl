@@ -112,7 +112,7 @@ validate_path_attrs(#bgp_update{path_attrs = PathAttrs}) ->
 
 validate_attrs([], AttrCounters) ->
   Dups = dict:filter(fun(_Type, Count) -> Count > 1 end, AttrCounters),
-  case size(Dups) of
+  case dict:size(Dups) of
     0 -> ok;
     _ -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}}
   end;
