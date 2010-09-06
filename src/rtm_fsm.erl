@@ -4,6 +4,9 @@
 -export([start_link/1]).
 -export([init/1]).
 
+% API
+-export([trigger/2]).
+
 % BGP FSM states.
 -export([idle/2, connect/2, active/2, open_sent/2, open_confirm/2,
          established/2]).
@@ -19,6 +22,13 @@ start_link(Session) ->
 
 init(Session) ->
   {ok, idle, Session}.
+
+%
+% API
+%
+
+trigger(FSM, Event) ->
+  gen_fsm:send_event(FSM, Event).
 
 %
 % BGP FSM.
@@ -342,7 +352,7 @@ connect_to_peer(Session) ->
   Session.
 
 close_connection(#session{server = Server} = Session) ->
-  gen_server:cast(Server, close_connection),
+  rtm_server:close_peer_connection(Server),
   Session#session{server = undefined}.
 
 release_resources(Session) ->
@@ -353,7 +363,7 @@ release_resources(Session) ->
   NewSession.
 
 check_peer(#session{server = Server, remote_addr = RemoteAddr}) ->
-  case gen_server:call(Server, peer_addr) of
+  case rtm_server:peer_addr(Server) of
     {ok, RemoteAddr} -> ok;
     {ok, _}          -> bad_peer
   end.
@@ -391,4 +401,4 @@ send_keepalive(#session{server = Server}) ->
   send(Server, rtm_msg:build_keepalive()).
 
 send(Server, Bin) ->
-  gen_server:cast(Server, {send_msg, Bin}).
+  rtm_server:send_msg(Server, Bin).

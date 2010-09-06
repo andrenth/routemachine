@@ -3,6 +3,9 @@
 
 -export([start_link/1]).
 
+% API
+-export([send_msg/2, close_peer_connection/1, peer_addr/1]).
+
 % Exports for gen_server.
 -export([init/1, handle_info/2, handle_call/3, handle_cast/2, terminate/2,
          code_change/3]).
@@ -21,6 +24,18 @@
 start_link(FSM) ->
   gen_server:start_link(?MODULE, FSM, []).
 
+%
+% API.
+%
+
+send_msg(Server, Bin) ->
+  gen_server:cast(Server, {send_msg, Bin}).
+
+close_peer_connection(Server) ->
+  gen_server:cast(Server, close_connection).
+
+peer_addr(Server) ->
+  gen_server:call(Server, peer_addr).
 
 %
 % Callbacks for gen_server.
@@ -39,11 +54,11 @@ handle_info({tcp, Socket, Bin},
   {noreply, Proc(NewState)};
 
 handle_info({tcp_closed, _Socket}, #state{fsm = FSM} = State) ->
-  gen_fsm:send_event(FSM, tcp_closed),
+  rtm_fsm:trigger(FSM, tcp_closed),
   {stop, normal, State#state{socket = undefined}};
 
 handle_info({tcp_error, _Socket}, #state{fsm = FSM} = State) ->
-  gen_fsm:send_event(FSM, tcp_fatal),
+  rtm_fsm:trigger(FSM, tcp_fatal),
   {stop, normal, State#state{socket = undefined}}.
 
 handle_call(peername, _From, #state{socket = Socket} = State) ->
@@ -99,7 +114,7 @@ process_message(#state{data     = Data,
   {Bin, Rest} = split_binary(Data, Length),
   NewState = State#state{data = Rest, data_proc = fun process_header/1},
   Event = receipt_event(Type, Bin, Length),
-  gen_fsm:send_event(FSM, Event),
+  rtm_fsm:trigger(FSM, Event),
   process_header(NewState);
 
 process_message(State) ->

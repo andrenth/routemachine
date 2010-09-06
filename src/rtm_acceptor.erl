@@ -38,7 +38,7 @@ handle_info(timeout, #state{listen_socket = ListenSocket,
       Session = S#session{establishment = {passive, Socket}},
       {ok, Pid} = rtm_fsm_sup:start_child(Session),
       gen_tcp:controlling_process(Socket, Pid),
-      gen_fsm:send_event(Pid, start),
+      rtm_fsm:trigger(Pid, start),
       inet:setopts(Socket, [{active, once}]);
     error ->
       gen_tcp:close(Socket)
