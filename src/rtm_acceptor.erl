@@ -6,7 +6,8 @@
 % Exports for gen_server.
 %-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 %         terminate/2, code_change/3]).
--export([init/1, handle_info/2, terminate/2]).
+-export([init/1, handle_info/2, terminate/2, code_change/3, handle_call/3,
+         handle_cast/2]).
 
 -include_lib("bgp.hrl").
 
@@ -47,3 +48,12 @@ handle_info(timeout, #state{listen_socket = ListenSocket,
 terminate(_Reason, #state{listen_socket = ListenSocket}) ->
   gen_tcp:close(ListenSocket),
   ok.
+
+code_change(_OldVsn, State, _Extra) ->
+  {ok, State}.
+
+handle_call(_Request, _From, State) ->
+  {stop, unexpected_call, State}.
+
+handle_cast(_Request, State) ->
+  {stop, unexpected_cast, State}.

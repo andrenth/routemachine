@@ -9,7 +9,8 @@
          established/2]).
 
 % Exports for gen_fsm.
--export([terminate/3]).
+-export([terminate/3, code_change/4, handle_event/3, handle_sync_event/4,
+         handle_info/3]).
 
 -include_lib("bgp.hrl").
 
@@ -278,6 +279,18 @@ established(_Event, Session) ->
 terminate(_Reason, _StateName, Session) ->
   release_resources(Session),
   ok.
+
+code_change(_OldVsn, StateName, Session, _Extra) ->
+  {ok, StateName, Session}.
+
+handle_event(_Event, _StateName, Session) ->
+  {stop, unexpected_event, Session}.
+
+handle_sync_event(_Event, _From, _StateName, Session) ->
+  {stop, unexpected_sync_event, Session}.
+
+handle_info(_Info, _StateName, Session) ->
+  {stop, unexpected_info, Session}.
 
 %
 % Internal functions.
