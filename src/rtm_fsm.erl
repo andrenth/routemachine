@@ -182,7 +182,7 @@ open_confirm(keepalive_received, Session) ->
   error_logger:info_msg("FSM:open_confirm/keepalive_received~n"),
   {next_state, established, Session};
 
-open_confirm({timeout, hold}, Session) ->
+open_confirm({timeout, _Ref, hold}, Session) ->
   error_logger:info_msg("FSM:open_confirm/hold_timeout~n"),
   send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {next_state, idle, Session};
@@ -192,7 +192,7 @@ open_confirm({notification_received, _Bin}, Session) ->
   % TODO parse notification.
   {next_state, idle, Session};
 
-open_confirm({timeout, keepalive}, Session) ->
+open_confirm({timeout, _Ref, keepalive}, Session) ->
   error_logger:info_msg("FSM:open_confirm/keepalive_timeout~n"),
   KeepAlive = restart_timer(keepalive, Session),
   send_keepalive(Session),
@@ -246,12 +246,12 @@ established({notification_received, _Bin}, Session) ->
   % TODO parse notification.
   {stop, normal, Session};
 
-established({timeout, hold}, Session) ->
+established({timeout, _Ref, hold}, Session) ->
   error_logger:info_msg("FSM:established/hold_timeout~n"),
   send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {stop, normal, Session};
 
-established({timeout, keepalive}, Session) ->
+established({timeout, _Ref, keepalive}, Session) ->
   error_logger:info_msg("FSM:established/keepalive_timeout~n"),
   KeepAlive = restart_timer(keepalive, Session),
   send_keepalive(Session),
