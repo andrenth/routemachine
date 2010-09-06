@@ -99,7 +99,7 @@ parse_withdrawn_routes(?BGP_WITHDRAWN_ROUTES_PATTERN, Parsed) ->
   parse_withdrawn_routes(OtherWithdrawn, [WithdrawnPrefix | Parsed]).
 
 parse_path_attrs(Attrs) ->
-  parse_path_attrs(Attrs, [], 0).
+  parse_path_attrs(Attrs, dict:new(), 0).
 
 parse_path_attrs(<<>>, Parsed, WellKnown) ->
   {Parsed, WellKnown};
@@ -123,7 +123,8 @@ parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed, WellKnown) ->
                                   %     of NOTIFICATION messages.
          },
   NewWellKnown = add_flag(WellKnown, AttrTypeCode),
-  parse_path_attrs(OtherPathAttrs, [Attr | Parsed], NewWellKnown).
+  parse_path_attrs(OtherPathAttrs, dict:append(AttrTypeCode, Attr, Parsed),
+                   NewWellKnown).
 
 
 add_flag(Flags, ?BGP_PATH_ATTR_ORIGIN) ->

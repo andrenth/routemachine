@@ -108,24 +108,19 @@ validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
   end.
 
 validate_path_attrs(#bgp_update{path_attrs = PathAttrs}) ->
-  validate_attrs(PathAttrs, dict:new()).
+  dict:fold(fun(_Type, Attr, ok) -> validate_attr(Attr) end, ok, PathAttrs).
 
-validate_attrs([], AttrCounters) ->
-  Dups = dict:filter(fun(_Type, Count) -> Count > 1 end, AttrCounters),
-  case dict:size(Dups) of
-    0 -> ok;
-    _ -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}}
+validate_attr([Attr]) ->
+  Vs = [fun validate_flags/1, fun validate_attr_len/1, fun validate_value/1],
+  case validate(Attr, Vs) of
+    ok -> ok;
+    {error, Error} -> throw({error, Error})
   end;
-validate_attrs([#bgp_path_attr{type_code = T} = Attr | Rest], AttrCounters) ->
-  case validate_attr(Attr) of
-    ok -> validate_attrs(Rest, dict:update_counter(T, 1, AttrCounters));
-    {error, Subcode, Data} -> {error, ?BGP_ERR_UPDATE, Subcode, Data}
-  end.
 
-validate_attr(Attr) ->
-  validate(Attr, [fun validate_flags/1,
-                  fun validate_attr_len/1,
-                  fun validate_value/1]).
+validate_attr([_Attr | _More]) ->
+  % Duplicate attribute.
+  throw({error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}}).
+
 
 validate_flags(Attr) ->
   case Attr of
