@@ -278,8 +278,8 @@ validate_update_error(?BGP_UPDATE_ERR_AS_PATH)      -> ok;
 validate_update_error(Subcode) ->
   invalid_error(?BGP_ERR_OPEN, Subcode).
 
-invalid_error(Code, Subcode) ->
-  io:format("Invalid error code ~p, subcode ~p~n", [Code, Subcode]).
+invalid_error(Code, SubCode) ->
+  {error, Code, SubCode}.
 
 validate(_Rec, []) ->
   ok;
