@@ -27,14 +27,13 @@ start_link(FSM) ->
 %
 
 init(FSM) ->
-  io:format("Starting server ~w~n", [self()]),
+  error_logger:info_msg("Starting server ~w~n", [self()]),
   process_flag(trap_exit, true),
   State = #state{data = <<>>, data_proc = fun process_header/1, fsm = FSM},
   {ok, State}.
 
 handle_info({tcp, Socket, Bin},
             #state{data = Data, data_proc = Proc} = State) ->
-  io:format("Got data on socket~n", []),
   inet:setopts(Socket, [{active, once}]),
   NewState = State#state{socket = Socket, data = list_to_binary([Data, Bin])},
   {noreply, Proc(NewState)};
@@ -59,7 +58,8 @@ handle_cast({send_msg, Bin}, #state{socket = Socket} = State) ->
   {noreply, State};
 
 handle_cast(close_connection, #state{socket = Socket} = State) ->
-  io:format("Closing connection with peer, stopping server ~w~n", [self()]),
+  error_logger:info_msg("Closing connection with peer, stopping server ~w~n",
+                        [self()]),
   gen_tcp:close(Socket),
   {stop, normal, State#state{socket = undefined}}.
 
@@ -78,7 +78,6 @@ process_header(#state{data = Data} = State)
   {Bin, Rest} = split_binary(Data, ?BGP_HEADER_LENGTH),
   NewState = State#state{data = Rest,
                          data_proc = fun process_message/1},
-  io:format("Header received: ~w~n", [Bin]),
   case rtm_parser:parse_header(Bin) of
     {ok, Hdr} ->
       #bgp_header{msg_type = Type, msg_len = Len} = Hdr,
@@ -90,7 +89,6 @@ process_header(#state{data = Data} = State)
   end;
 
 process_header(State) ->
-  io:format("Incomplete header~n", []),
   State.
 
 
@@ -100,14 +98,11 @@ process_message(#state{data     = Data,
                        fsm      = FSM} = State) when size(Data) >= Length ->
   {Bin, Rest} = split_binary(Data, Length),
   NewState = State#state{data = Rest, data_proc = fun process_header/1},
-  io:format("Message received: ~w~n", [Bin]),
-  io:format("Sending event to FSM ~p~n", [FSM]),
   Event = receipt_event(Type, Bin, Length),
   gen_fsm:send_event(FSM, Event),
   process_header(NewState);
 
 process_message(State) ->
-  io:format("Incomplete message~n", []),
   State.
 
 receipt_event(Type, Bin, Len) ->

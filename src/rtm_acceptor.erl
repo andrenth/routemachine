@@ -25,14 +25,12 @@ start_link(ListenSocket, Peers) ->
 %
 
 init(State) ->
-  io:format("Starting acceptor ~w~n", [self()]),
   process_flag(trap_exit, true),
   {ok, State, 0}.
 
 handle_info(timeout, #state{listen_socket = ListenSocket,
                             peers         = Peers} = State) ->
   {ok, Socket} = gen_tcp:accept(ListenSocket),
-  io:format("Returned from accept~n", []),
   {ok, {PeerAddr, _Port}} = inet:peername(Socket),
   case dict:find(PeerAddr, Peers) of
     {ok, S} ->
