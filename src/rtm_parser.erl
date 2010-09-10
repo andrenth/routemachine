@@ -174,7 +174,7 @@ parse_nlri(<<>>, Parsed) ->
   Parsed;
 
 parse_nlri(?BGP_NLRI_PATTERN, Parsed) ->
-  parse_nlri(OtherRoutes, [ RoutePrefix | Parsed]).
+  parse_nlri(OtherRoutes, [ {RouteLength, RoutePrefix} | Parsed]).
 
 %
 % Helpers for NOTIFICATION.

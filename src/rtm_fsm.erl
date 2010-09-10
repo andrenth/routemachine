@@ -1,6 +1,9 @@
 -module(rtm_fsm).
 -behaviour(gen_fsm).
 
+-include_lib("bgp.hrl").
+-include_lib("session.hrl").
+
 -export([start_link/1]).
 -export([init/1]).
 
@@ -15,13 +18,12 @@
 -export([terminate/3, code_change/4, handle_event/3, handle_sync_event/4,
          handle_info/3]).
 
--include_lib("bgp.hrl").
-
 start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
 
 init(Session) ->
-  {ok, idle, Session}.
+  {ok, Pid} = rtm_rib_sup:start_child(),
+  {ok, idle, Session#session{rib = Pid}}.
 
 %
 % API
@@ -234,13 +236,14 @@ established(stop, Session) ->
   send_notification(Session, ?BGP_ERR_CEASE),
   {stop, stop, Session};
 
-established({update_received, Bin, Len}, Session) ->
+established({update_received, Bin, Len}, #session{rib = RIB} = Session) ->
   error_logger:info_msg("FSM:established/update_received~n"),
   Hold = restart_timer(hold, Session),
   NewSession = Session#session{hold_timer = Hold},
   case rtm_parser:parse_update(Bin, Len) of
-    {ok, _Msg} ->
-      % TODO handle update - section 6.3.
+    {ok, #bgp_update{path_attrs = PathAttrs} = Msg} ->
+      rtm_rib:update(RIB, Msg),
+      rtm_rib:rdp(RIB, PathAttrs),
       {next_state, established, NewSession};
     {error, _Error} ->
       send_notification(NewSession, ?BGP_ERR_UPDATE),
