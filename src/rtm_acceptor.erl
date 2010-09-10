@@ -27,6 +27,7 @@ start_link(ListenSocket, Peers) ->
 
 init(State) ->
   process_flag(trap_exit, true),
+  register(rtm_acceptor, self()),
   {ok, State, 0}.
 
 handle_info(timeout, #state{listen_socket = ListenSocket,
