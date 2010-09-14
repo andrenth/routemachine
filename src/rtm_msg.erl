@@ -294,7 +294,7 @@ build_header(MessageType, MessageLength) ->
 
 build_open(ASN, HoldTime, LocalAddr) ->
   Version = 4,
-  BGPId = ip_to_uint(LocalAddr),
+  BGPId = rtm_util:ip_to_num(LocalAddr),
   OptParamsLen = 0, % TODO
   OptParams = <<>>,
   Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
@@ -314,7 +314,3 @@ build_notification(ErrorCode) ->
 
 build_keepalive() ->
   build_header(?BGP_TYPE_KEEPALIVE, ?BGP_HEADER_LENGTH).
-
-
-ip_to_uint({B1, B2, B3, B4}) ->
-  (B1 bsl 24) bor (B2 bsl 16) bor (B3 bsl 8) bor B4.
