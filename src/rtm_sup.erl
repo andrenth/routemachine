@@ -14,7 +14,7 @@ init({ListenPort, Peers}) ->
     {rtm_acceptor,
       {rtm_acceptor, start_link, [ListenSocket, Peers]},
       permanent,
-      2000,
+      brutal_kill,
       worker,
       [rtm_acceptor]},
 
