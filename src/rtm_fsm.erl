@@ -21,8 +21,8 @@
 start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
 
-init(#session{remote_addr = RemoteAddr} = Session) ->
-  {ok, Pid} = rtm_rib_sup:start_child(RemoteAddr),
+init(#session{peer_addr = PeerAddr} = Session) ->
+  {ok, Pid} = rtm_rib_sup:start_child(PeerAddr),
   {ok, idle, Session#session{rib = Pid}}.
 
 %
@@ -119,7 +119,7 @@ active({open_received, Bin}, Session) ->
       send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
-      {next_state, open_confirm, NewSession#session{remote_asn = ASN}};
+      {next_state, open_confirm, NewSession#session{peer_asn = ASN}};
     {error, Error} ->
       send_notification(Session, Error),
       {stop, normal, Session}
@@ -154,7 +154,7 @@ open_sent({open_received, Bin}, Session) ->
       send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
-      {next_state, open_confirm, NewSession#session{remote_asn = ASN}};
+      {next_state, open_confirm, NewSession#session{peer_asn = ASN}};
     {error, Error} ->
       send_notification(Session, Error),
       {stop, normal, Session}
@@ -279,10 +279,10 @@ established(tcp_fatal, Session) ->
   error_logger:info_msg("FSM:established/tcp_fatal~n"),
   {stop, normal, Session};
 
-established(_Event, #session{rib = RIB, remote_addr = RemoteAddr} = Session) ->
+established(_Event, #session{rib = RIB, peer_addr = PeerAddr} = Session) ->
   error_logger:info_msg("FSM:established/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
-  rtm_rib:remove(RIB, RemoteAddr),
+  rtm_rib:remove(RIB, PeerAddr),
   {stop, normal, Session}.
 
 
@@ -335,12 +335,12 @@ clear_timer(Timer) ->
 
 % Instead of implementing collision detection, just make sure there's
 % only one connection per peer. This is what OpenBGPd does.
-connect_to_peer(#session{server      = undefined,
-                         local_addr  = LocalAddr,
-                         remote_addr = RemoteAddr} = Session) ->
+connect_to_peer(#session{server     = undefined,
+                         local_addr = LocalAddr,
+                         peer_addr  = PeerAddr} = Session) ->
   {ok, Pid} = rtm_server_sup:start_child(self()),
   SockOpts = [binary, {ip, LocalAddr}, {packet, raw}, {active, false}],
-  case gen_tcp:connect(RemoteAddr, ?BGP_PORT, SockOpts) of
+  case gen_tcp:connect(PeerAddr, ?BGP_PORT, SockOpts) of
     {ok, Socket}     ->
       gen_tcp:controlling_process(Socket, Pid),
       gen_fsm:send_event(self(), tcp_open),
@@ -366,14 +366,14 @@ release_resources(Session) ->
   clear_timer(Session#session.keepalive_timer),
   NewSession.
 
-check_peer(#session{server = Server, remote_addr = RemoteAddr}) ->
+check_peer(#session{server = Server, peer_addr = PeerAddr}) ->
   case rtm_server:peer_addr(Server) of
-    {ok, RemoteAddr} -> ok;
+    {ok, PeerAddr} -> ok;
     {ok, _}          -> bad_peer
   end.
 
-negotiate_hold_time(LocalHoldTime, RemoteHoldTime) ->
-  HoldTime = min(LocalHoldTime, RemoteHoldTime),
+negotiate_hold_time(LocalHoldTime, PeerHoldTime) ->
+  HoldTime = min(LocalHoldTime, PeerHoldTime),
   case HoldTime < ?BGP_TIMER_HOLD_MIN of
     true  -> 0;
     false -> HoldTime

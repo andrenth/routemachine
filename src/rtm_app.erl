@@ -17,15 +17,15 @@ start(_Type, _Args) ->
     #session{
       establishment   = passive,
       local_asn       = 2,
-      remote_asn      = 1,
+      peer_asn        = 1,
       local_addr      = {10,7,5,4},
-      remote_addr     = {10,7,5,167},
+      peer_addr       = {10,7,5,167},
       hold_time       = ?BGP_TIMER_HOLD,
       keepalive_time  = ?BGP_TIMER_KEEPALIVE,
       conn_retry_time = ?BGP_TIMER_CONN_RETRY
     }
   ],
-  Peers = lists:foldl(fun(#session{remote_addr = Ip} = Session, Acc) ->
+  Peers = lists:foldl(fun(#session{peer_addr = Ip} = Session, Acc) ->
     dict:store(Ip, Session, Acc)
   end, dict:new(), PeerList),
   rtm_sup:start_link(ListenPort, Peers).

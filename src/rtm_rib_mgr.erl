@@ -34,8 +34,8 @@ select_best_routes(Pid, InRIB) ->
 update(Routes) ->
   gen_server:call(rtm_rib_mgr, {update, Routes}).
 
-remove(RemoteAddr) ->
-  gen_server:call(rtm_rib_mgr, {remove, RemoteAddr}).
+remove(PeerAddr) ->
+  gen_server:call(rtm_rib_mgr, {remove, PeerAddr}).
 
 %
 % Callbacks for gen_server.
