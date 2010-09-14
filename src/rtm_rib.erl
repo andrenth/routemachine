@@ -4,26 +4,30 @@
 -include_lib("bgp.hrl").
 -include_lib("route.hrl").
 
--export([start_link/0]).
+-export([start_link/1]).
 
 % API.
--export([update/2, rdp/2]).
+-export([get/2, update/2, rdp/2, stop/1]).
 
 % Exports for gen_server.
 -export([init/1, handle_info/2, handle_call/3, handle_cast/2, terminate/2,
          code_change/3]).
 
 -record(state, {
+  peer_addr,
   adj_rib_in,
   adj_rib_out
 }).
 
-start_link() ->
-  gen_server:start_link(?MODULE, ok, []).
+start_link(PeerAddr) ->
+  gen_server:start_link(?MODULE, PeerAddr, []).
 
 %
 % API
 %
+
+get(RIB, Table) ->
+  gen_server:call(RIB, {get, Table}).
 
 update(RIB, Msg) ->
   gen_server:call(RIB, {update, Msg}).
@@ -31,13 +35,21 @@ update(RIB, Msg) ->
 rdp(RIB, PathAttrs) ->
   gen_server:call(RIB, {rdp, PathAttrs}).
 
+stop(RIB) ->
+  gen_server:call(RIB, stop).
+
 %
 % Callbacks for gen_server.
 %
 
-init(ok) ->
+init(PeerAddr) ->
   rtm_rib_mgr:register(self()),
-  {ok, #state{adj_rib_in = dict:new(), adj_rib_out = dict:new()}}.
+  {ok, #state{peer_addr   = PeerAddr,
+              adj_rib_in  = dict:new(),
+              adj_rib_out = dict:new()}}.
+
+handle_call({get, adj_rib_in}, _From, #state{adj_rib_in = InRIB} = State) ->
+  {reply, InRIB, State};
 
 handle_call({update, #bgp_update{withdrawn_routes = WithdrawnRoutes,
                                  path_attrs       = PathAttrs,
@@ -58,11 +70,14 @@ handle_call({rdp, PathAttrs}, _From, #state{adj_rib_in = InRIB} = State) ->
             (Num band 16#0000ff00) bsr 8, (Num band 16#000000ff)},
       {IP, NH}
     end, Routes)]),
-  % TODO
-  %send_updates(Routes), 
-  {reply, ok, State}.
+  ok = rtm_rib_mgr:update(Routes), 
+  {reply, ok, State};
 
-terminate(_Reason, _State) ->
+handle_call(stop, _From, State) ->
+  {stop, normal, ok, State}.
+
+terminate(_Reason, #state{peer_addr = PeerAddr}) ->
+  rtm_rib_mgr:remove(PeerAddr),
   ok.
 
 code_change(_OldVsn, State, _Extra) ->

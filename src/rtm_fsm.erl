@@ -21,8 +21,8 @@
 start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
 
-init(Session) ->
-  {ok, Pid} = rtm_rib_sup:start_child(),
+init(#session{remote_addr = RemoteAddr} = Session) ->
+  {ok, Pid} = rtm_rib_sup:start_child(RemoteAddr),
   {ok, idle, Session#session{rib = Pid}}.
 
 %
@@ -279,10 +279,10 @@ established(tcp_fatal, Session) ->
   error_logger:info_msg("FSM:established/tcp_fatal~n"),
   {stop, normal, Session};
 
-established(_Event, Session) ->
+established(_Event, #session{rib = RIB, remote_addr = RemoteAddr} = Session) ->
   error_logger:info_msg("FSM:established/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
-  % TODO delete_routes(Session),
+  rtm_rib:remove(RIB, RemoteAddr),
   {stop, normal, Session}.
 
 
@@ -354,8 +354,9 @@ connect_to_peer(#session{server      = undefined,
 connect_to_peer(Session) ->
   Session.
 
-close_connection(#session{server = Server} = Session) ->
+close_connection(#session{server = Server, rib = RIB} = Session) ->
   rtm_server:close_peer_connection(Server),
+  rtm_rib:stop(RIB),
   Session#session{server = undefined}.
 
 release_resources(Session) ->

@@ -1,14 +1,14 @@
 -module(rtm_rib_sup).
 -behavior(supervisor).
 
--export([start_link/0, start_child/0]).
+-export([start_link/0, start_child/1]).
 -export([init/1]).
 
 start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, ok).
 
-start_child() ->
-  supervisor:start_child(?MODULE, []).
+start_child(PeerAddr) ->
+  supervisor:start_child(?MODULE, [PeerAddr]).
 
 init(ok) ->
   RibSpec =
