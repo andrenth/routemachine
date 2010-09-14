@@ -139,7 +139,7 @@ parse_attr_value(?BGP_PATH_ATTR_ORIGIN, <<Value:8>>) ->
 parse_attr_value(?BGP_PATH_ATTR_AS_PATH, Paths) ->
   parse_as_path(Paths, []);
 
-parse_attr_value(?BGP_PATH_ATTR_NEXT_HOP, NextHop) ->
+parse_attr_value(?BGP_PATH_ATTR_NEXT_HOP, <<NextHop:32>>) ->
   NextHop;
 
 parse_attr_value(?BGP_PATH_ATTR_MED, <<MED:32>>) ->
