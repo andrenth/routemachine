@@ -1,8 +1,7 @@
 -module(rtm_msg).
 -include_lib("bgp.hrl").
 
--export([validate_header/1, validate_open/1, validate_update/2,
-         validate_notification/1]).
+-export([validate_header/1, validate_open/1, validate_update/2]).
 -export([build_open/3, build_notification/1, build_keepalive/0]).
 
 %
@@ -25,10 +24,6 @@ validate_update(Msg, MsgLen) ->
   validate(Msg, [fun(M) -> validate_update_length(M, MsgLen) end,
                  fun validate_path_attrs/1,
                  fun validate_missing_well_known_attrs/1]).
-
-validate_notification(Msg) ->
-  validate(Msg, [fun validate_error/1]).
-
 
 %
 % Internal functions.
@@ -225,56 +220,6 @@ check_flag(Flags, ?BGP_PATH_ATTR_LOCAL_PREF) ->
   Flags bor ?BGP_WELL_KNOWN_FLAG_LOCAL_PREF;
 check_flag(Flags, ?BGP_PATH_ATTR_ATOMIC_AGGR) ->
   Flags bor ?BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR.
-
-
-% NOTIFICATION message validation.
-
-validate_error(#bgp_notification{error_code = ?BGP_ERR_HEADER} = Msg) ->
-  validate_header_error(Msg#bgp_notification.error_subcode);
-validate_error(#bgp_notification{error_code = ?BGP_ERR_OPEN} = Msg) ->
-  validate_open_error(Msg#bgp_notification.error_subcode);
-validate_error(#bgp_notification{error_code = ?BGP_ERR_UPDATE} = Msg) ->
-  validate_update_error(Msg#bgp_notification.error_subcode);
-validate_error(#bgp_notification{error_code = ?BGP_ERR_HOLD_TIME}) ->
-  ok;
-validate_error(#bgp_notification{error_code = ?BGP_ERR_FSM}) ->
-  ok;
-validate_error(#bgp_notification{error_code = ?BGP_ERR_CEASE}) ->
-  ok;
-validate_error(#bgp_notification{error_code = C, error_subcode = S}) ->
-  invalid_error(C, S).
-
-validate_header_error(?BGP_HEADER_ERR_SYNC)   -> ok;
-validate_header_error(?BGP_HEADER_ERR_LENGTH) -> ok;
-validate_header_error(?BGP_HEADER_ERR_TYPE)   -> ok;
-validate_header_error(Subcode) ->
-  invalid_error(?BGP_ERR_OPEN, Subcode).
-
-validate_open_error(?BGP_OPEN_ERR_VERSION)   -> ok;
-validate_open_error(?BGP_OPEN_ERR_PEER_AS)   -> ok;
-validate_open_error(?BGP_OPEN_ERR_BGP_ID)    -> ok;
-validate_open_error(?BGP_OPEN_ERR_OPT_PARAM) -> ok;
-validate_open_error(?BGP_OPEN_ERR_AUTH_FAIL) -> ok;
-validate_open_error(?BGP_OPEN_ERR_HOLD_TIME) -> ok;
-validate_open_error(Subcode) ->
-  invalid_error(?BGP_ERR_OPEN, Subcode).
-
-validate_update_error(?BGP_UPDATE_ERR_ATTR_LIST)    -> ok;
-validate_update_error(?BGP_UPDATE_ERR_ATTR_UNRECOG) -> ok;
-validate_update_error(?BGP_UPDATE_ERR_ATTR_MISSING) -> ok;
-validate_update_error(?BGP_UPDATE_ERR_ATTR_FLAGS)   -> ok;
-validate_update_error(?BGP_UPDATE_ERR_ATTR_LENGTH)  -> ok;
-validate_update_error(?BGP_UPDATE_ERR_ORIGIN)       -> ok;
-validate_update_error(?BGP_UPDATE_ERR_LOOP)         -> ok;
-validate_update_error(?BGP_UPDATE_ERR_NEXT_HOP)     -> ok;
-validate_update_error(?BGP_UPDATE_ERR_OPT_ATTR)     -> ok;
-validate_update_error(?BGP_UPDATE_ERR_NETWORK)      -> ok;
-validate_update_error(?BGP_UPDATE_ERR_AS_PATH)      -> ok;
-validate_update_error(Subcode) ->
-  invalid_error(?BGP_ERR_OPEN, Subcode).
-
-invalid_error(Code, SubCode) ->
-  {error, Code, SubCode}.
 
 validate(_Rec, []) ->
   ok;

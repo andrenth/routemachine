@@ -200,9 +200,9 @@ open_confirm({timeout, _Ref, hold}, Session) ->
   send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {next_state, idle, Session};
 
-open_confirm({notification_received, _Bin}, Session) ->
+open_confirm({notification_received, Bin}, Session) ->
   error_logger:info_msg("FSM:open_confirm/notification_received~n"),
-  % TODO parse notification.
+  log_notification(Bin),
   {next_state, idle, Session};
 
 open_confirm({timeout, _Ref, keepalive}, Session) ->
@@ -255,9 +255,9 @@ established(keepalive_received, Session) ->
   Hold = restart_timer(hold, Session),
   {next_state, established, Session#session{hold_timer = Hold}};
 
-established({notification_received, _Bin}, Session) ->
+established({notification_received, Bin}, Session) ->
   error_logger:info_msg("FSM:established/notification_received~n"),
-  % TODO parse notification.
+  log_notification(Bin),
   {stop, normal, Session};
 
 established({timeout, _Ref, hold}, Session) ->
@@ -388,6 +388,9 @@ start_timers(Session, HoldTime) ->
                   hold_timer      = Hold,
                   keepalive_timer = KeepAlive}.
 
+log_notification(Bin) ->
+  #bgp_notification{error_string = Err} = rtm_parser:parse_notification(Bin),
+  error_logger:error_msg(Err).
 
 % Message sending.
 

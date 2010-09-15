@@ -48,16 +48,9 @@ parse_update(?BGP_UPDATE_PATTERN, Len) ->
   end.
 
 parse_notification(?BGP_NOTIFICATION_PATTERN) ->
-  Data = parse_notification(ErrorCode, ErrorSubCode, ErrorData),
-  Msg = #bgp_notification{
-    error_code    = ErrorCode,
-    error_subcode = ErrorSubCode,
-    data          = Data
-  },
-  case rtm_msg:validate_notification(Msg) of
-    ok    -> {ok, Msg};
-    Error -> Error
-  end.
+  ErrorString = error_string(ErrorCode, ErrorSubCode, ErrorData),
+  Msg = #bgp_notification{error_string = ErrorString},
+  {ok, Msg}.
 
 %
 % Internal functions.
@@ -174,57 +167,89 @@ parse_nlri(?BGP_NLRI_PATTERN, Parsed) ->
 %
 
 % Header errors.
-parse_notification(?BGP_ERR_HEADER, ?BGP_HEADER_ERR_SYNC, <<>>) ->
-  undefined;
-parse_notification(?BGP_ERR_HEADER, ?BGP_HEADER_ERR_LENGTH, <<BadLen>>) ->
-  BadLen;
-parse_notification(?BGP_ERR_HEADER, ?BGP_HEADER_ERR_TYPE, <<BadType>>) ->
-  BadType;
+error_string(?BGP_ERR_HEADER, SubCode, Data) ->
+  "Header error: " ++ header_error(SubCode, Data);
 
-% OPEN errors.
-parse_notification(?BGP_ERR_OPEN, ?BGP_OPEN_ERR_VERSION, <<MaxVer:16>>) ->
-  MaxVer;
-parse_notification(?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS, <<>>) ->
-  undefined;
-parse_notification(?BGP_ERR_OPEN, ?BGP_OPEN_ERR_HOLD_TIME, <<>>) ->
-  undefined;
-parse_notification(?BGP_ERR_OPEN, ?BGP_OPEN_ERR_BGP_ID, <<>>) ->
-  undefined;
-parse_notification(?BGP_ERR_OPEN, ?BGP_OPEN_ERR_OPT_PARAM, <<>>) ->
-  undefined;
-parse_notification(?BGP_ERR_OPEN, ?BGP_OPEN_ERR_AUTH_FAIL, <<>>) ->
-  undefined;
+error_string(?BGP_ERR_OPEN, SubCode, Data) ->
+  "OPEN message error: " ++ open_error(SubCode, Data);
 
-% UPDATE errors.
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST, <<>>) ->
-  undefined;
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_FLAGS, Data) ->
-  element(1, parse_path_attrs(Data));
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LENGTH, Data) ->
-  element(1, parse_path_attrs(Data));
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_MISSING, <<Code:8>>) ->
-  Code;
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_UNRECOG, Data) ->
-  element(1, parse_path_attrs(Data));
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ORIGIN, Data) ->
-  element(1, parse_path_attrs(Data));
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_NEXT_HOP, Data) ->
-  element(1, parse_path_attrs(Data));
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_AS_PATH, <<>>) ->
-  undefined;
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_OPT_ATTR, Data) ->
-  element(1, parse_path_attrs(Data));
-parse_notification(?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_NETWORK, <<>>) ->
-  undefined;
+error_string(?BGP_ERR_UPDATE, SubCode, Data) ->
+  "UPDATE message error: " ++ update_error(SubCode, Data);
 
-% Hold time errors.
-parse_notification(?BGP_ERR_HOLD_TIME, _SubCode, <<>>) ->
-  undefined;
+error_string(?BGP_ERR_HOLD_TIME, _SubCode, <<>>) ->
+  "Hold timer expired";
 
-% FSM errors.
-parse_notification(?BGP_ERR_FSM, _SubCode, <<>>) ->
-  undefined;
+error_string(?BGP_ERR_FSM, _SubCode, <<>>) ->
+  "Finite State Machine error";
 
-% Cease.
-parse_notification(?BGP_ERR_CEASE, _SubCode, <<>>) ->
-  undefined.
+error_string(?BGP_ERR_CEASE, _SubCode, <<>>) ->
+  "Cease";
+
+error_string(Code, SubCode, Data) ->
+  io_lib:format("Unknown error: ~B/~B/~w",
+                [Code, SubCode, Data]).
+
+header_error(?BGP_HEADER_ERR_SYNC, <<>>) ->
+  "connection not synchronized";
+header_error(?BGP_HEADER_ERR_LENGTH, <<BadLen:16>>) ->
+  io_lib:format("bad message length: ~B", [BadLen]);
+header_error(?BGP_HEADER_ERR_TYPE, <<BadType:8>>) ->
+  io_lib:format("bad message type: ~B", [BadType]);
+header_error(SubCode, Data) ->
+  subcode_error(SubCode, Data).
+
+open_error(?BGP_OPEN_ERR_VERSION, <<MaxVer:16>>) ->
+  io_lib:format("unsupported version number: ~B", [MaxVer]);
+open_error(?BGP_OPEN_ERR_PEER_AS, <<>>) ->
+  "bad peer AS";
+open_error(?BGP_OPEN_ERR_HOLD_TIME, <<>>) ->
+  "unacceptable hold time";
+open_error(?BGP_OPEN_ERR_BGP_ID, <<>>) ->
+  "bad BGP identifier";
+open_error(?BGP_OPEN_ERR_OPT_PARAM, <<>>) ->
+  "unsupported optional parameter";
+open_error(?BGP_OPEN_ERR_AUTH_FAIL, <<>>) ->
+  "authentication failure";
+open_error(SubCode, Data) ->
+  subcode_error(SubCode, Data).
+
+update_error(?BGP_UPDATE_ERR_ATTR_LIST, <<>>) ->
+  "malformed attribute list";
+update_error(?BGP_UPDATE_ERR_ATTR_FLAGS, Data) ->
+  {Type, Length, Value} = parse_attr(Data),
+  io_lib:format("attribute flags error: ~B/~B/~w", [Type, Length, Value]);
+update_error(?BGP_UPDATE_ERR_ATTR_LENGTH, Data) ->
+  Size = bit_size(Data),
+  <<BadLen:Size>> = Data,
+  io_lib:format("attribute length error: ~B", [BadLen]);
+update_error(?BGP_UPDATE_ERR_ATTR_MISSING, <<Code:8>>) ->
+  io_lib:format("missing well-known attribute: ~B", [Code]);
+update_error(?BGP_UPDATE_ERR_ATTR_UNRECOG, Data) ->
+  {Type, Length, Value} = parse_attr(Data),
+  io_lib:format("unrecognized well-known attribute: ~B/~B/~w",
+                [Type, Length, Value]);
+update_error(?BGP_UPDATE_ERR_ORIGIN, Data) ->
+  {Type, Length, Value} = parse_attr(Data),
+  io_lib:format("invalid ORIGIN attribute: ~B/~B/~w", [Type, Length, Value]);
+update_error(?BGP_UPDATE_ERR_NEXT_HOP, Data) ->
+  {Type, Length, Value} = parse_attr(Data),
+  io_lib:format("invalid NEXT_HOP attribute: ~B/~B/~w", [Type, Length, Value]);
+update_error(?BGP_UPDATE_ERR_AS_PATH, <<>>) ->
+  "malformed AS_PATH";
+update_error(?BGP_UPDATE_ERR_OPT_ATTR, Data) ->
+  {Type, Length, Value} = parse_attr(Data),
+  io_lib:format("optional attribute error: ~B/~B/~w", [Type, Length, Value]);
+update_error(?BGP_UPDATE_ERR_NETWORK, <<>>) ->
+  "invalid network field";
+update_error(SubCode, Data) ->
+  subcode_error(SubCode, Data).
+
+subcode_error(SubCode, Data) ->
+  io_lib:format("unknown: subcode=~B, data=~w", [SubCode, Data]).
+
+parse_attr(Data) ->
+  << Type:8, Rest/binary >> = Data,
+  << _:1, _:1, _:1, Extended:1, _:4 >> = Type,
+  L = (Extended + 1) * 8,
+  << _:8, Length:L, Value:Length/binary >> = Rest,
+  {Type, Length, Value}.

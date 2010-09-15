@@ -126,9 +126,7 @@
 }).
 
 -record(bgp_notification, {
-  error_code,
-  error_subcode,
-  data
+  error_string
 }).
 
 %
