@@ -122,6 +122,7 @@ active({open_received, Bin}, #session{peer_asn  = PeerASN,
       NewSession = start_timers(Session, NewHoldTime),
       {next_state, open_confirm, NewSession#session{peer_asn = ASN}};
     {error, Error} ->
+      log_error(Error),
       send_notification(Session, Error),
       {stop, normal, Session}
   end;
@@ -157,6 +158,7 @@ open_sent({open_received, Bin}, Session) ->
       NewSession = start_timers(Session, NewHoldTime),
       {next_state, open_confirm, NewSession#session{peer_asn = ASN}};
     {error, Error} ->
+      log_error(Error),
       send_notification(Session, Error),
       {stop, normal, Session}
   end;
@@ -247,7 +249,8 @@ established({update_received, Bin, Len},
       rtm_rib:update(RIB, Msg),
       rtm_rib:rdp(RIB, PathAttrs),
       {next_state, established, NewSession};
-    {error, _Error} ->
+    {error, Error} ->
+      log_error(Error),
       send_notification(NewSession, ?BGP_ERR_UPDATE),
       {stop, normal, NewSession}
   end;
@@ -394,6 +397,9 @@ log_notification(Bin) ->
   {ok, #bgp_notification{error_string = Err}} =
     rtm_parser:parse_notification(Bin),
   error_logger:info_msg(Err).
+
+log_error({Code, SubCode, Data}) ->
+  error_logger:error_msg(rtm_util:error_string(Code, SubCode, Data)).
 
 % Message sending.
 

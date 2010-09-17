@@ -9,21 +9,24 @@
 %
 
 validate_header(Hdr) ->
-  validate(Hdr, [fun validate_marker/1,
-                 fun validate_msg_len/1,
-                 fun validate_type/1]).
+  validate(Hdr, ?BGP_ERR_HEADER,
+           [fun validate_marker/1,
+           fun validate_msg_len/1,
+           fun validate_type/1]).
 
 validate_open(Msg, ConfigASN, ConfigID) ->
-  validate(Msg, [fun validate_version/1,
-                 fun(M) -> validate_asn(M, ConfigASN) end,
-                 fun validate_hold_time/1,
-                 fun(M) -> validate_bgp_id(M, ConfigID) end,
-                 fun validate_opt_params/1]).
+  validate(Msg, ?BGP_ERR_OPEN,
+           [fun validate_version/1,
+            fun(M) -> validate_asn(M, ConfigASN) end,
+            fun validate_hold_time/1,
+            fun(M) -> validate_bgp_id(M, ConfigID) end,
+            fun validate_opt_params/1]).
 
 validate_update(Msg, MsgLen, LocalASN) ->
-  validate(Msg, [fun(M) -> validate_update_length(M, MsgLen) end,
-                 fun(M) -> validate_path_attrs(M, LocalASN) end,
-                 fun validate_missing_well_known_attrs/1]).
+  validate(Msg, ?BGP_ERR_UPDATE,
+           [fun(M) -> validate_update_length(M, MsgLen) end,
+            fun(M) -> validate_path_attrs(M, LocalASN) end,
+            fun validate_missing_well_known_attrs/1]).
 
 %
 % Internal functions.
@@ -35,7 +38,7 @@ validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN,
                             marker = ?BGP_HEADER_MARKER}) ->
   ok;
 validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN}) ->
-  {error, {?BGP_ERR_HEADER, ?BGP_HEADER_ERR_SYNC, <<>>}};
+  {error, {?BGP_HEADER_ERR_SYNC, <<>>}};
 validate_marker(#bgp_header{}) ->
   ok. % TODO Handle auth.
 
@@ -55,37 +58,37 @@ validate_msg_len(#bgp_header{msg_type = ?BGP_TYPE_KEEPALIVE, msg_len = Len})
                  when Len =:= ?BGP_HEADER_LENGTH ->
   ok;
 validate_msg_len(#bgp_header{msg_len = Len}) ->
-  {error, {?BGP_ERR_HEADER, ?BGP_HEADER_ERR_LENGTH, <<Len:8>>}}.
+  {error, {?BGP_HEADER_ERR_LENGTH, <<Len:8>>}}.
 
 validate_type(#bgp_header{msg_type = ?BGP_TYPE_OPEN})         -> ok;
 validate_type(#bgp_header{msg_type = ?BGP_TYPE_UPDATE})       -> ok;
 validate_type(#bgp_header{msg_type = ?BGP_TYPE_NOTIFICATION}) -> ok;
 validate_type(#bgp_header{msg_type = ?BGP_TYPE_KEEPALIVE})    -> ok;
 validate_type(#bgp_header{msg_type = Type}) ->
-  {error, {?BGP_ERR_HEADER, ?BGP_HEADER_ERR_TYPE, <<Type:8>>}}.
+  {error, {?BGP_HEADER_ERR_TYPE, <<Type:8>>}}.
 
 % OPEN message validation.
 
 validate_version(#bgp_open{version = 4}) ->
   ok;
 validate_version(#bgp_open{}) ->
-  {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_VERSION, <<4:16>>}}.
+  {error, {?BGP_OPEN_ERR_VERSION, <<4:16>>}}.
 
 validate_asn(#bgp_open{asn = ASN}, ConfigASN) ->
   case ASN =:= ConfigASN of
     true  -> ok;
-    false -> {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS, <<>>}}
+    false -> {error, {?BGP_OPEN_ERR_PEER_AS, <<>>}}
   end.
 
 validate_hold_time(#bgp_open{hold_time = HoldTime}) when HoldTime < 3 ->
-  {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS, <<>>}};
+  {error, {?BGP_OPEN_ERR_PEER_AS, <<>>}};
 validate_hold_time(#bgp_open{}) ->
   ok.
 
 validate_bgp_id(#bgp_open{bgp_id = Id}, ConfigID) ->
   case Id =:= ConfigID of
     true  -> ok;
-    false -> {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_BGP_ID, <<>>}}
+    false -> {error, {?BGP_OPEN_ERR_BGP_ID, <<>>}}
   end.
 
 % TODO
@@ -99,7 +102,7 @@ validate_opt_params(#bgp_open{}) ->
 validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
                        MsgLen) ->
   case ?BGP_UPDATE_MIN_LENGTH + ULen + ALen > MsgLen + ?BGP_HEADER_LENGTH of
-    true  -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST, <<>>}};
+    true  -> {error, {?BGP_UPDATE_ERR_ATTR_LIST, <<>>}};
     false -> ok
   end.
 
@@ -115,14 +118,14 @@ validate_attr([Attr], LocalASN) ->
   Vs = [fun validate_flags/1,
         fun validate_attr_len/1,
         fun(A) -> validate_value(A, LocalASN) end],
-  case validate(Attr, Vs) of
+  case validate(Attr, ?BGP_ERR_UPDATE, Vs) of
     ok -> ok;
-    {error, Error} -> throw({error, Error})
+    {error, {_, SubCode, Data}} -> throw({error, {SubCode, Data}})
   end;
 
 validate_attr([_Attr | _More], _LocalASN) ->
   % Duplicate attribute.
-  throw({error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST, <<>>}}).
+  throw({error, {?BGP_UPDATE_ERR_ATTR_LIST, <<>>}}).
 
 
 validate_flags(Attr) ->
@@ -156,9 +159,9 @@ validate_flags(Attr) ->
                    transitive = 1} ->
       ok;
     #bgp_path_attr{optional = 0} ->
-      {error, ?BGP_UPDATE_ERR_ATTR_UNRECOG, build_attr(Attr)};
+      {error, {?BGP_UPDATE_ERR_ATTR_UNRECOG, build_attr(Attr)}};
     _ ->
-      {error, ?BGP_UPDATE_ERR_ATTR_FLAGS, build_attr(Attr)}
+      {error, {?BGP_UPDATE_ERR_ATTR_FLAGS, build_attr(Attr)}}
   end.
 
 validate_attr_len(#bgp_path_attr{type_code = Type, length = Len} = Attr) ->
@@ -171,20 +174,20 @@ validate_attr_len(#bgp_path_attr{type_code = Type, length = Len} = Attr) ->
     {?BGP_PATH_ATTR_ATOMIC_AGGR, 0} -> ok;
     {?BGP_PATH_ATTR_AGGREGATOR,  6} -> ok;
     _ ->
-      {error, ?BGP_UPDATE_ERR_ATTR_LENGTH, build_attr(Attr)}
+      {error, {?BGP_UPDATE_ERR_ATTR_LENGTH, build_attr(Attr)}}
   end.
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_ORIGIN,
                               value     = Val} = Attr, _)
                when Val > ?BGP_PATH_ATTR_ORIGIN_INCOMPLETE ->
-  {error, ?BGP_UPDATE_ERR_ORIGIN, build_attr(Attr)};
+  {error, {?BGP_UPDATE_ERR_ORIGIN, build_attr(Attr)}};
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_NEXT_HOP,
                               value     = Val} = Attr, _)
                when Val =:= 0 ->
   % XXX can any other syntatic validation be done?
   % TODO semantic validation for eBGP as in section 6.3.
-  {error, ?BGP_UPDATE_ERR_NEXT_HOP, build_attr(Attr)};
+  {error, {?BGP_UPDATE_ERR_NEXT_HOP, build_attr(Attr)}};
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_AS_PATH,
                               value     = Val}, LocalASN) ->
@@ -198,9 +201,9 @@ validate_as_path([], _LocalASN) ->
 validate_as_path([{Type, _ASN} | _Rest], _LocalASN)
                  when Type =/= ?BGP_AS_PATH_SET
                  andalso Type =/= ?BGP_AS_PATH_SEQUENCE ->
-  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_AS_PATH, <<>>};
+  {error, {?BGP_UPDATE_ERR_AS_PATH, <<>>}};
 validate_as_path([{_Type, LocalASN} | _Rest], LocalASN) ->
-  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_LOOP, <<>>};
+  {error, {?BGP_UPDATE_ERR_LOOP, <<>>}};
 validate_as_path([{_Type, _ASN} | Rest], LocalASN) ->
   validate_as_path(Rest, LocalASN).
 
@@ -212,7 +215,7 @@ build_attr(#bgp_path_attr{optional   = Opt,
                           length     = Len,
                           raw_value  = Val}) ->
   LenSize = (Ext + 1) * 8,
-  <<Opt:1,Trans:1,Partial:1,Ext:1,0:8,Type:8,Len:LenSize,Val>>.
+  <<Opt:1,Trans:1,Partial:1,Ext:1,0:8,Type:8,Len:LenSize,Val/binary>>.
 
 validate_missing_well_known_attrs(#bgp_update{well_known_attrs = Flags}) ->
   check_well_known_flags(Flags, [?BGP_PATH_ATTR_ORIGIN,
@@ -225,7 +228,7 @@ check_well_known_flags(_Flags, []) ->
   ok;
 check_well_known_flags(Flags, [Type | Rest]) ->
   case check_flag(Flags, Type) of
-    0 -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_MISSING}, <<Type:8>>};
+    0 -> {error, {?BGP_UPDATE_ERR_ATTR_MISSING}, <<Type:8>>};
     _ -> check_well_known_flags(Flags, Rest)
   end.
 
@@ -240,15 +243,12 @@ check_flag(Flags, ?BGP_PATH_ATTR_LOCAL_PREF) ->
 check_flag(Flags, ?BGP_PATH_ATTR_ATOMIC_AGGR) ->
   Flags bor ?BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR.
 
-validate(_Rec, []) ->
+validate(_Rec, _Code, []) ->
   ok;
-validate(Rec, [Validator | Rest]) ->
+validate(Rec, Code, [Validator | Rest]) ->
   case Validator(Rec) of
-    ok ->
-      validate(Rec, Rest);
-    {error, {Code, SubCode, Data} = Error} ->
-      error_logger:error_msg(rtm_util:error_string(Code, SubCode, Data)),
-      {error, Error}
+    ok -> validate(Rec, Code, Rest);
+    {error, {SubCode, Data}} -> {error, {Code, SubCode, Data}}
   end.
 
 %
