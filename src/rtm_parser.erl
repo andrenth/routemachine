@@ -1,7 +1,7 @@
 -module(rtm_parser).
 -include_lib("bgp.hrl").
 
--export([parse_header/1, parse_open/2, parse_update/2, parse_notification/1]).
+-export([parse_header/1, parse_open/3, parse_update/2, parse_notification/1]).
 
 %
 % Parser functions.
@@ -18,7 +18,7 @@ parse_header(?BGP_HEADER_PATTERN) ->
     Error -> Error
   end.
 
-parse_open(?BGP_OPEN_PATTERN, ConfigASN) ->
+parse_open(?BGP_OPEN_PATTERN, ConfigASN, ConfigID) ->
   Msg = #bgp_open{
     version        = Version,
     asn            = ASN,
@@ -27,7 +27,7 @@ parse_open(?BGP_OPEN_PATTERN, ConfigASN) ->
     opt_params_len = OptParamsLen,
     opt_params     = parse_opt_params(OptParams)
   },
-  case rtm_msg:validate_open(Msg, ConfigASN) of
+  case rtm_msg:validate_open(Msg, ConfigASN, ConfigID) of
     ok    -> {ok, Msg};
     Error -> Error
   end.

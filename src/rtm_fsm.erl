@@ -110,10 +110,11 @@ active(tcp_open, Session) ->
       {next_state, active, NewSession}
   end;
 
-active({open_received, Bin}, #session{peer_asn = PeerASN} = Session) ->
+active({open_received, Bin}, #session{peer_asn  = PeerASN,
+                                      peer_addr = PeerAddr} = Session) ->
   error_logger:info_msg("FSM:active/open_received~n"),
   clear_timer(Session#session.conn_retry_timer),
-  case rtm_parser:parse_open(Bin, PeerASN) of
+  case rtm_parser:parse_open(Bin, PeerASN, PeerAddr) of
     {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
       send_open(Session),
       send_keepalive(Session),
