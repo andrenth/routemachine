@@ -35,7 +35,7 @@ validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN,
                             marker = ?BGP_HEADER_MARKER}) ->
   ok;
 validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN}) ->
-  {error, {?BGP_ERR_HEADER, ?BGP_HEADER_ERR_SYNC}};
+  {error, {?BGP_ERR_HEADER, ?BGP_HEADER_ERR_SYNC, <<>>}};
 validate_marker(#bgp_header{}) ->
   ok. % TODO Handle auth.
 
@@ -74,18 +74,18 @@ validate_version(#bgp_open{}) ->
 validate_asn(#bgp_open{asn = ASN}, ConfigASN) ->
   case ASN =:= ConfigASN of
     true  -> ok;
-    false -> {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS}}
+    false -> {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS, <<>>}}
   end.
 
 validate_hold_time(#bgp_open{hold_time = HoldTime}) when HoldTime < 3 ->
-  {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS}};
+  {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS, <<>>}};
 validate_hold_time(#bgp_open{}) ->
   ok.
 
 validate_bgp_id(#bgp_open{bgp_id = Id}, ConfigID) ->
   case Id =:= ConfigID of
     true  -> ok;
-    false -> {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_BGP_ID}}
+    false -> {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_BGP_ID, <<>>}}
   end.
 
 % TODO
@@ -99,7 +99,7 @@ validate_opt_params(#bgp_open{}) ->
 validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
                        MsgLen) ->
   case ?BGP_UPDATE_MIN_LENGTH + ULen + ALen > MsgLen + ?BGP_HEADER_LENGTH of
-    true  -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}};
+    true  -> {error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST, <<>>}};
     false -> ok
   end.
 
@@ -118,7 +118,7 @@ validate_attr([Attr], LocalASN) ->
 
 validate_attr([_Attr | _More], _LocalASN) ->
   % Duplicate attribute.
-  throw({error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}}).
+  throw({error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST, <<>>}}).
 
 
 validate_flags(Attr) ->
@@ -194,9 +194,9 @@ validate_as_path([], _LocalASN) ->
 validate_as_path([{Type, _ASN} | _Rest], _LocalASN)
                  when Type =/= ?BGP_AS_PATH_SET
                  andalso Type =/= ?BGP_AS_PATH_SEQUENCE ->
-  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_AS_PATH};
+  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_AS_PATH, <<>>};
 validate_as_path([{_Type, LocalASN} | _Rest], LocalASN) ->
-  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_LOOP};
+  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_LOOP, <<>>};
 validate_as_path([{_Type, _ASN} | Rest], LocalASN) ->
   validate_as_path(Rest, LocalASN).
 
@@ -240,9 +240,10 @@ validate(_Rec, []) ->
   ok;
 validate(Rec, [Validator | Rest]) ->
   case Validator(Rec) of
-    ok -> validate(Rec, Rest);
-    {error, Error} ->
-      error_logger:error_msg("Message validation error: ~p~n", [Error]),
+    ok ->
+      validate(Rec, Rest);
+    {error, {Code, SubCode, Data} = Error} ->
+      error_logger:error_msg(rtm_util:error_string(Code, SubCode, Data)),
       {error, Error}
   end.
 
