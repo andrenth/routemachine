@@ -1,7 +1,7 @@
 -module(rtm_msg).
 -include_lib("bgp.hrl").
 
--export([validate_header/1, validate_open/1, validate_update/2]).
+-export([validate_header/1, validate_open/2, validate_update/2]).
 -export([build_open/3, build_notification/1, build_keepalive/0]).
 
 %
@@ -13,9 +13,9 @@ validate_header(Hdr) ->
                  fun validate_msg_len/1,
                  fun validate_type/1]).
 
-validate_open(Msg) ->
+validate_open(Msg, ConfigASN) ->
   validate(Msg, [fun validate_version/1,
-                 fun validate_asn/1,
+                 fun(M) -> validate_asn(M, ConfigASN) end,
                  fun validate_hold_time/1,
                  fun validate_bgp_id/1,
                  fun validate_opt_params/1]).
@@ -71,9 +71,11 @@ validate_version(#bgp_open{version = 4}) ->
 validate_version(#bgp_open{}) ->
   {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_VERSION, <<4:16>>}}.
 
-% TODO
-validate_asn(#bgp_open{}) ->
-  ok.
+validate_asn(#bgp_open{asn = ASN}, ConfigASN) ->
+  case ASN =:= ConfigASN of
+    true  -> ok;
+    false -> {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS}}
+  end.
 
 validate_hold_time(#bgp_open{hold_time = HoldTime}) when HoldTime < 3 ->
   {error, {?BGP_ERR_OPEN, ?BGP_OPEN_ERR_PEER_AS}};
