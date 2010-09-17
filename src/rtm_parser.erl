@@ -1,7 +1,7 @@
 -module(rtm_parser).
 -include_lib("bgp.hrl").
 
--export([parse_header/1, parse_open/3, parse_update/2, parse_notification/1]).
+-export([parse_header/1, parse_open/3, parse_update/3, parse_notification/1]).
 
 %
 % Parser functions.
@@ -32,7 +32,7 @@ parse_open(?BGP_OPEN_PATTERN, ConfigASN, ConfigID) ->
     Error -> Error
   end.
 
-parse_update(?BGP_UPDATE_PATTERN, Len) ->
+parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
   {Attrs, WellKnown} = parse_path_attrs(PathAttrs),
   Msg = #bgp_update{
     unfeasible_len   = UnfeasableLength,
@@ -42,7 +42,7 @@ parse_update(?BGP_UPDATE_PATTERN, Len) ->
     well_known_attrs = WellKnown,
     nlri             = parse_nlri(NLRI)
   },
-  case rtm_msg:validate_update(Msg, Len) of
+  case rtm_msg:validate_update(Msg, Len, LocalASN) of
     ok    -> {ok, Msg};
     Error -> Error
   end.

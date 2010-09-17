@@ -1,7 +1,7 @@
 -module(rtm_msg).
 -include_lib("bgp.hrl").
 
--export([validate_header/1, validate_open/3, validate_update/2]).
+-export([validate_header/1, validate_open/3, validate_update/3]).
 -export([build_open/3, build_notification/1, build_keepalive/0]).
 
 %
@@ -20,9 +20,9 @@ validate_open(Msg, ConfigASN, ConfigID) ->
                  fun(M) -> validate_bgp_id(M, ConfigID) end,
                  fun validate_opt_params/1]).
 
-validate_update(Msg, MsgLen) ->
+validate_update(Msg, MsgLen, LocalASN) ->
   validate(Msg, [fun(M) -> validate_update_length(M, MsgLen) end,
-                 fun validate_path_attrs/1,
+                 fun(M) -> validate_path_attrs(M, LocalASN) end,
                  fun validate_missing_well_known_attrs/1]).
 
 %
@@ -103,17 +103,20 @@ validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
     false -> ok
   end.
 
-validate_path_attrs(#bgp_update{path_attrs = PathAttrs}) ->
-  dict:fold(fun(_Type, Attr, ok) -> validate_attr(Attr) end, ok, PathAttrs).
+validate_path_attrs(#bgp_update{path_attrs = PathAttrs}, LocalASN) ->
+  dict:fold(fun(_Type, Attr, ok) -> validate_attr(Attr, LocalASN) end, ok,
+            PathAttrs).
 
-validate_attr([Attr]) ->
-  Vs = [fun validate_flags/1, fun validate_attr_len/1, fun validate_value/1],
+validate_attr([Attr], LocalASN) ->
+  Vs = [fun validate_flags/1,
+        fun validate_attr_len/1,
+        fun(A) -> validate_value(A, LocalASN) end],
   case validate(Attr, Vs) of
     ok -> ok;
     {error, Error} -> throw({error, Error})
   end;
 
-validate_attr([_Attr | _More]) ->
+validate_attr([_Attr | _More], _LocalASN) ->
   % Duplicate attribute.
   throw({error, {?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_ATTR_LIST}}).
 
@@ -167,24 +170,35 @@ validate_attr_len(#bgp_path_attr{type_code = Type, length = Len} = Attr) ->
       {error, ?BGP_UPDATE_ERR_ATTR_LENGTH, build_attr(Attr)}
   end.
 
-% TODO validate AS_PATH values. All syntatic validation should
-% have been done in rtm_parser, so the error should probably
-% be caught elsewhere anyway.
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_ORIGIN,
-                              value     = Val} = Attr)
+                              value     = Val} = Attr, _)
                when Val > ?BGP_PATH_ATTR_ORIGIN_INCOMPLETE ->
   {error, ?BGP_UPDATE_ERR_ORIGIN, build_attr(Attr)};
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_NEXT_HOP,
-                              value     = Val} = Attr)
+                              value     = Val} = Attr, _)
                when Val =:= 0 ->
   % XXX can any other syntatic validation be done?
   % TODO semantic validation for eBGP as in section 6.3.
   {error, ?BGP_UPDATE_ERR_NEXT_HOP, build_attr(Attr)};
 
-validate_value(#bgp_path_attr{}) ->
+validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_AS_PATH,
+                              value     = Val}, LocalASN) ->
+  validate_as_path(Val, LocalASN);
+
+validate_value(#bgp_path_attr{}, _) ->
   ok.
 
+validate_as_path([], _LocalASN) ->
+  ok;
+validate_as_path([{Type, _ASN} | _Rest], _LocalASN)
+                 when Type =/= ?BGP_AS_PATH_SET
+                 andalso Type =/= ?BGP_AS_PATH_SEQUENCE ->
+  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_AS_PATH};
+validate_as_path([{_Type, LocalASN} | _Rest], LocalASN) ->
+  {error, ?BGP_ERR_UPDATE, ?BGP_UPDATE_ERR_LOOP};
+validate_as_path([{_Type, _ASN} | Rest], LocalASN) ->
+  validate_as_path(Rest, LocalASN).
 
 build_attr(#bgp_path_attr{optional   = Opt,
                           transitive = Trans,
@@ -227,7 +241,9 @@ validate(_Rec, []) ->
 validate(Rec, [Validator | Rest]) ->
   case Validator(Rec) of
     ok -> validate(Rec, Rest);
-    {error, Error} -> {error, Error}
+    {error, Error} ->
+      error_logger:error_msg("Message validation error: ~p~n", [Error]),
+      {error, Error}
   end.
 
 %

@@ -38,6 +38,10 @@
 -define(BGP_PATH_ATTR_ORIGIN_EGP,        1).
 -define(BGP_PATH_ATTR_ORIGIN_INCOMPLETE, 2).
 
+% AS_PATH types.
+-define(BGP_AS_PATH_SET,      1).
+-define(BGP_AS_PATH_SEQUENCE, 2).
+
 % Error codes
 -define(BGP_ERR_HEADER,    1).
 -define(BGP_ERR_OPEN,      2).

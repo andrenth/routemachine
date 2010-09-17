@@ -237,11 +237,12 @@ established(stop, Session) ->
   send_notification(Session, ?BGP_ERR_CEASE),
   {stop, stop, Session};
 
-established({update_received, Bin, Len}, #session{rib = RIB} = Session) ->
+established({update_received, Bin, Len},
+            #session{rib = RIB, local_asn = LocalASN} = Session) ->
   error_logger:info_msg("FSM:established/update_received~n"),
   Hold = restart_timer(hold, Session),
   NewSession = Session#session{hold_timer = Hold},
-  case rtm_parser:parse_update(Bin, Len) of
+  case rtm_parser:parse_update(Bin, Len, LocalASN) of
     {ok, #bgp_update{path_attrs = PathAttrs} = Msg} ->
       rtm_rib:update(RIB, Msg),
       rtm_rib:rdp(RIB, PathAttrs),
