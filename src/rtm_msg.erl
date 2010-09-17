@@ -211,11 +211,11 @@ build_attr(#bgp_path_attr{optional   = Opt,
                           transitive = Trans,
                           partial    = Partial,
                           extended   = Ext,
-                          type_code  = Type,
+                          type_code  = TypeCode,
                           length     = Len,
                           raw_value  = Val}) ->
-  LenSize = (Ext + 1) * 8,
-  <<Opt:1,Trans:1,Partial:1,Ext:1,0:8,Type:8,Len:LenSize,Val/binary>>.
+  <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
+  {Type, Len, Val}.
 
 validate_missing_well_known_attrs(#bgp_update{well_known_attrs = Flags}) ->
   check_well_known_flags(Flags, [?BGP_PATH_ATTR_ORIGIN,

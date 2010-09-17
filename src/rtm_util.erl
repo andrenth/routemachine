@@ -61,29 +61,22 @@ open_error(SubCode, Data) ->
 
 update_error(?BGP_UPDATE_ERR_ATTR_LIST, <<>>) ->
   "malformed attribute list";
-update_error(?BGP_UPDATE_ERR_ATTR_FLAGS, Data) ->
-  {Type, Length, Value} = parse_attr(Data),
+update_error(?BGP_UPDATE_ERR_ATTR_FLAGS, {Type, Length, Value}) ->
   io_lib:format("attribute flags error: ~B/~B/~w", [Type, Length, Value]);
-update_error(?BGP_UPDATE_ERR_ATTR_LENGTH, Data) ->
-  Size = bit_size(Data),
-  <<BadLen:Size>> = Data,
-  io_lib:format("attribute length error: ~B", [BadLen]);
+update_error(?BGP_UPDATE_ERR_ATTR_LENGTH, {Type, Length, Value}) ->
+  io_lib:format("attribute length error: ~B/~B/~w", [Type, Length, Value]);
 update_error(?BGP_UPDATE_ERR_ATTR_MISSING, <<Code:8>>) ->
   io_lib:format("missing well-known attribute: ~B", [Code]);
-update_error(?BGP_UPDATE_ERR_ATTR_UNRECOG, Data) ->
-  {Type, Length, Value} = parse_attr(Data),
+update_error(?BGP_UPDATE_ERR_ATTR_UNRECOG, {Type, Length, Value}) ->
   io_lib:format("unrecognized well-known attribute: ~B/~B/~w",
                 [Type, Length, Value]);
-update_error(?BGP_UPDATE_ERR_ORIGIN, Data) ->
-  {Type, Length, Value} = parse_attr(Data),
+update_error(?BGP_UPDATE_ERR_ORIGIN, {Type, Length, Value}) ->
   io_lib:format("invalid ORIGIN attribute: ~B/~B/~w", [Type, Length, Value]);
-update_error(?BGP_UPDATE_ERR_NEXT_HOP, Data) ->
-  {Type, Length, Value} = parse_attr(Data),
+update_error(?BGP_UPDATE_ERR_NEXT_HOP, {Type, Length, Value}) ->
   io_lib:format("invalid NEXT_HOP attribute: ~B/~B/~w", [Type, Length, Value]);
 update_error(?BGP_UPDATE_ERR_AS_PATH, <<>>) ->
   "malformed AS_PATH";
-update_error(?BGP_UPDATE_ERR_OPT_ATTR, Data) ->
-  {Type, Length, Value} = parse_attr(Data),
+update_error(?BGP_UPDATE_ERR_OPT_ATTR, {Type, Length, Value}) ->
   io_lib:format("optional attribute error: ~B/~B/~w", [Type, Length, Value]);
 update_error(?BGP_UPDATE_ERR_NETWORK, <<>>) ->
   "invalid network field";
@@ -92,10 +85,3 @@ update_error(SubCode, Data) ->
 
 subcode_error(SubCode, Data) ->
   io_lib:format("unknown: subcode=~B, data=~w", [SubCode, Data]).
-
-parse_attr(Data) ->
-  << Type:8, Rest/binary >> = Data,
-  << _:1, _:1, _:1, Extended:1, _:4 >> = Type,
-  L = (Extended + 1) * 8,
-  << _:8, Length:L, Value:Length/binary >> = Rest,
-  {Type, Length, Value}.
