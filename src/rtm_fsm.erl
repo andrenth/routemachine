@@ -391,8 +391,9 @@ start_timers(Session, HoldTime) ->
                   keepalive_timer = KeepAlive}.
 
 log_notification(Bin) ->
-  #bgp_notification{error_string = Err} = rtm_parser:parse_notification(Bin),
-  error_logger:error_msg(Err).
+  {ok, #bgp_notification{error_string = Err}} =
+    rtm_parser:parse_notification(Bin),
+  error_logger:info_msg(Err).
 
 % Message sending.
 
