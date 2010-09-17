@@ -104,8 +104,12 @@ validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
   end.
 
 validate_path_attrs(#bgp_update{path_attrs = PathAttrs}, LocalASN) ->
-  dict:fold(fun(_Type, Attr, ok) -> validate_attr(Attr, LocalASN) end, ok,
-            PathAttrs).
+  try
+    dict:fold(fun(_Type, Attr, ok) -> validate_attr(Attr, LocalASN) end, ok,
+              PathAttrs)
+  catch
+    throw:Error -> Error
+  end.
 
 validate_attr([Attr], LocalASN) ->
   Vs = [fun validate_flags/1,
