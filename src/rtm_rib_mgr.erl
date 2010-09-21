@@ -126,7 +126,13 @@ local_pref(#route{local_pref = LocalPref}) ->
 send_updates(LocRIB, []) ->
   LocRIB;
 send_updates(LocRIB, [{{Len, Prefix}, #route{next_hop = GW} = Route} | Rest]) ->
-  add_route(Prefix, Len, GW),
+  case dict:find({Len, Prefix}, LocRIB) of
+    {ok, #route{next_hop = OldGW}} ->
+      delete_route(Prefix, Len, OldGW),
+      add_route(Prefix, Len, GW);
+    error ->
+      add_route(Prefix, Len, GW)
+  end,
   send_updates(dict:store({Len, Prefix}, Route, LocRIB), Rest).
 
 clear_loc_rib(LocRIB) ->
