@@ -1,4 +1,4 @@
--module(rtm_acceptor).
+-module(rtm_main).
 -behavior(gen_server).
 
 -include_lib("bgp.hrl").
@@ -28,7 +28,7 @@ start_link(ListenSocket, Peers) ->
 
 init(#state{peers = Peers} = State) ->
   process_flag(trap_exit, true),
-  register(rtm_acceptor, self()),
+  register(rtm_main, self()),
   start_active_sessions(Peers),
   {ok, State, 0}.
 

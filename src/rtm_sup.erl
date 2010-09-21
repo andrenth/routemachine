@@ -46,12 +46,12 @@ init({ListenPort, Peers}) ->
       worker,
       [rtm_fsm_mgr]},
 
-    {rtm_acceptor,
-      {rtm_acceptor, start_link, [ListenSocket, Peers]},
+    {rtm_main,
+      {rtm_main, start_link, [ListenSocket, Peers]},
       permanent,
       brutal_kill,
       worker,
-      [rtm_acceptor]}
+      [rtm_main]}
   ],
 
   {ok, {{one_for_one, 1, 1}, ChildSpecs}}.
