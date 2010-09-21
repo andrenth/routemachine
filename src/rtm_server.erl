@@ -4,7 +4,7 @@
 -export([start_link/1]).
 
 % API
--export([send_msg/2, close_peer_connection/1, peer_addr/1]).
+-export([send_msg/2, set_socket/2, close_peer_connection/1, peer_addr/1]).
 
 % Exports for gen_server.
 -export([init/1, handle_info/2, handle_call/3, handle_cast/2, terminate/2,
@@ -30,6 +30,9 @@ start_link(FSM) ->
 
 send_msg(Server, Bin) ->
   gen_server:cast(Server, {send_msg, Bin}).
+
+set_socket(Server, Socket) ->
+  gen_server:cast(Server, {set_socket, Socket}).
 
 close_peer_connection(Server) ->
   gen_server:cast(Server, close_connection).
@@ -71,6 +74,9 @@ handle_call(peername, _From, #state{socket = Socket} = State) ->
 handle_cast({send_msg, Bin}, #state{socket = Socket} = State) ->
   gen_tcp:send(Socket, Bin),
   {noreply, State};
+
+handle_cast({set_socket, Socket}, #state{socket = undefined} = State) ->
+  {noreply, State#state{socket = Socket}};
 
 handle_cast(close_connection, #state{socket = Socket} = State) ->
   error_logger:info_msg("Closing connection with peer, stopping server ~w~n",

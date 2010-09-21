@@ -15,7 +15,7 @@ start(_Type, _Args) ->
     end,
   PeerList = [
     #session{
-      establishment   = passive,
+      establishment   = active,
       local_asn       = 2,
       peer_asn        = 1,
       local_addr      = {10,7,5,4},

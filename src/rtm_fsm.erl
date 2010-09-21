@@ -38,19 +38,28 @@ trigger(FSM, Event) ->
 
 % Idle state.
 
-idle(start, #session{establishment = Establishment} = Session) ->
-  ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
-  NewSession = Session#session{conn_retry_timer = ConnRetry},
-  case Establishment of
-    active ->
-      error_logger:info_msg("FSM:idle/start(active)~n"),
-      EstabSession = connect_to_peer(NewSession),
-      {next_state, connect, EstabSession};
-    {passive, Socket} ->
-      error_logger:info_msg("FSM:idle/start(passive)~n"),
-      {ok, Pid} = rtm_server_sup:start_child(self()),
-      gen_tcp:controlling_process(Socket, Pid),
-      {next_state, active, NewSession#session{server = Pid}}
+idle(start, #session{establishment = Estab, peer_addr = PeerAddr} = Session) ->
+  % When starting up, we register ourselves with the FSM manager. This
+  % avoids collisions in case an active FSM receives a new connection,
+  % and is much simpler than the scheme described in the RFC.
+  case rtm_fsm_mgr:register(PeerAddr) of
+    ok ->
+      ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
+      NewSession = Session#session{conn_retry_timer = ConnRetry},
+      case Estab of
+        active ->
+          error_logger:info_msg("FSM:idle/start(active)~n"),
+          EstabSession = connect_to_peer(NewSession),
+          {next_state, connect, EstabSession};
+        {passive, Socket} ->
+          error_logger:info_msg("FSM:idle/start(passive)~n"),
+          {ok, Pid} = rtm_server_sup:start_child(self()),
+          gen_tcp:controlling_process(Socket, Pid),
+          {next_state, active, NewSession#session{server = Pid}}
+      end;
+    error ->
+      error_logger:info_msg("FSM:idle/start(peer already connected)~n"),
+      {stop, normal, Session}
   end;
 
 idle(_Error, Session) ->
@@ -70,7 +79,7 @@ connect(tcp_open, Session) ->
   error_logger:info_msg("FSM:connect/tcp_open~n"),
   clear_timer(Session#session.conn_retry_timer),
   send_open(Session),
-  {next_state, active, Session};
+  {next_state, open_sent, Session};
 
 connect(tcp_open_failed, Session) ->
   error_logger:info_msg("FSM:connect/tcp_open_failed~n"),
@@ -149,9 +158,10 @@ open_sent(stop, Session) ->
   send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
-open_sent({open_received, Bin}, Session) ->
+open_sent({open_received, Bin}, #session{peer_asn  = PeerASN,
+                                         peer_addr = PeerAddr} = Session) ->
   error_logger:info_msg("FSM:open_sent/open_received~n"),
-  case rtm_parser:parse_open(Bin) of
+  case rtm_parser:parse_open(Bin, PeerASN, PeerAddr) of
     {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
       send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
@@ -294,8 +304,9 @@ established(_Event, #session{rib = RIB, peer_addr = PeerAddr} = Session) ->
 %
 % gen_fsm callbacks.
 %
-terminate(_Reason, _StateName, Session) ->
+terminate(_Reason, _StateName, #session{peer_addr = PeerAddr} = Session) ->
   release_resources(Session),
+  rtm_fsm_mgr:unregister(PeerAddr),
   ok.
 
 code_change(_OldVsn, StateName, Session, _Extra) ->
@@ -338,26 +349,22 @@ clear_timer(undefined) ->
 clear_timer(Timer) ->
   gen_fsm:cancel_timer(Timer).
 
-% Instead of implementing collision detection, just make sure there's
-% only one connection per peer. This is what OpenBGPd does.
 connect_to_peer(#session{server     = undefined,
                          local_addr = LocalAddr,
                          peer_addr  = PeerAddr} = Session) ->
   {ok, Pid} = rtm_server_sup:start_child(self()),
   SockOpts = [binary, {ip, LocalAddr}, {packet, raw}, {active, false}],
   case gen_tcp:connect(PeerAddr, ?BGP_PORT, SockOpts) of
-    {ok, Socket}     ->
+    {ok, Socket} ->
+      rtm_server:set_socket(Pid, Socket),
+      inet:setopts(Socket, [{active, once}]),
       gen_tcp:controlling_process(Socket, Pid),
       gen_fsm:send_event(self(), tcp_open),
       Session#session{server = Pid};
     {error, _Reason} ->
       gen_fsm:send_event(self(), tcp_open_failed),
       Session
-  end;
-
-% There's already an associated server; ignore.
-connect_to_peer(Session) ->
-  Session.
+  end.
 
 close_connection(#session{server = Server, rib = RIB} = Session) ->
   rtm_server:close_peer_connection(Server),

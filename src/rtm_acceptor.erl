@@ -26,9 +26,10 @@ start_link(ListenSocket, Peers) ->
 % Callbacks for gen_server.
 %
 
-init(State) ->
+init(#state{peers = Peers} = State) ->
   process_flag(trap_exit, true),
   register(rtm_acceptor, self()),
+  start_active_sessions(Peers),
   {ok, State, 0}.
 
 handle_info(timeout, #state{listen_socket = ListenSocket,
@@ -59,3 +60,18 @@ handle_call(_Request, _From, State) ->
 
 handle_cast(_Request, State) ->
   {stop, unexpected_cast, State}.
+
+%
+% Internal functions.
+%
+
+start_active_sessions(Peers) ->
+  dict:fold(fun(_Ip, #session{establishment = Estab} = Session, ok) ->
+    case Estab of
+      active ->
+        {ok, Pid} = rtm_fsm_sup:start_child(Session),
+        rtm_fsm:trigger(Pid, start);
+      passive ->
+        ok
+    end
+  end, ok, Peers).

@@ -11,13 +11,6 @@ init({ListenPort, Peers}) ->
   {ok, ListenSocket} = gen_tcp:listen(ListenPort, SockOpts),
 
   ChildSpecs = [
-    {rtm_acceptor,
-      {rtm_acceptor, start_link, [ListenSocket, Peers]},
-      permanent,
-      brutal_kill,
-      worker,
-      [rtm_acceptor]},
-
     {rtm_rib_mgr,
       {rtm_rib_mgr, start_link, []},
       permanent,
@@ -44,7 +37,21 @@ init({ListenPort, Peers}) ->
       permanent,
       infinity,
       supervisor,
-      [rtm_fsm_sup]}
+      [rtm_fsm_sup]},
+
+    {rtm_fsm_mgr,
+      {rtm_fsm_mgr, start_link, []},
+      permanent,
+      brutal_kill,
+      worker,
+      [rtm_fsm_mgr]},
+
+    {rtm_acceptor,
+      {rtm_acceptor, start_link, [ListenSocket, Peers]},
+      permanent,
+      brutal_kill,
+      worker,
+      [rtm_acceptor]}
   ],
 
   {ok, {{one_for_one, 1, 1}, ChildSpecs}}.
