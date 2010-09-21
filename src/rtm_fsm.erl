@@ -21,9 +21,8 @@
 start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
 
-init(#session{peer_addr = PeerAddr} = Session) ->
-  {ok, Pid} = rtm_rib_sup:start_child(PeerAddr),
-  {ok, idle, Session#session{rib = Pid}}.
+init(Session) ->
+  {ok, idle, Session}.
 
 %
 % API
@@ -250,14 +249,13 @@ established(stop, Session) ->
   {stop, stop, Session};
 
 established({update_received, Bin, Len},
-            #session{rib = RIB, local_asn = LocalASN} = Session) ->
+            #session{local_asn = LocalASN} = Session) ->
   error_logger:info_msg("FSM:established/update_received~n"),
   Hold = restart_timer(hold, Session),
   NewSession = Session#session{hold_timer = Hold},
   case rtm_parser:parse_update(Bin, Len, LocalASN) of
-    {ok, #bgp_update{path_attrs = PathAttrs} = Msg} ->
-      rtm_rib:update(RIB, Msg),
-      rtm_rib:rdp(RIB, PathAttrs),
+    {ok, Msg} ->
+      rtm_rib_mgr:update(Msg, self()),
       {next_state, established, NewSession};
     {error, Error} ->
       log_error(Error),
@@ -294,10 +292,10 @@ established(tcp_fatal, Session) ->
   error_logger:info_msg("FSM:established/tcp_fatal~n"),
   {stop, normal, Session};
 
-established(_Event, #session{rib = RIB, peer_addr = PeerAddr} = Session) ->
+established(_Event, Session) ->
   error_logger:info_msg("FSM:established/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
-  rtm_rib:remove(RIB, PeerAddr),
+  rtm_rib_mgr:remove(self()),
   {stop, normal, Session}.
 
 
@@ -366,9 +364,9 @@ connect_to_peer(#session{server     = undefined,
       Session
   end.
 
-close_connection(#session{server = Server, rib = RIB} = Session) ->
+close_connection(#session{server = Server} = Session) ->
   rtm_server:close_peer_connection(Server),
-  rtm_rib:stop(RIB),
+  rtm_rib_mgr:remove(self()),
   Session#session{server = undefined}.
 
 release_resources(Session) ->

@@ -1,7 +1,6 @@
 -record(session, {
   establishment,
   server,
-  rib,
   local_asn,
   peer_asn,
   local_addr,

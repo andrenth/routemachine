@@ -18,13 +18,6 @@ init({ListenPort, Peers}) ->
       worker,
       [rtm_rib_mgr]},
 
-    {rtm_rib_sup,
-      {rtm_rib_sup, start_link, []},
-      permanent,
-      infinity,
-      supervisor,
-      [rtm_rib_sup]},
-
     {rtm_server_sup,
       {rtm_server_sup, start_link, []},
       permanent,
