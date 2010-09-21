@@ -255,7 +255,7 @@ established({update_received, Bin, Len},
   NewSession = Session#session{hold_timer = Hold},
   case rtm_parser:parse_update(Bin, Len, LocalASN) of
     {ok, Msg} ->
-      rtm_rib_mgr:update(Msg, self()),
+      rtm_rib:update(Msg, self()),
       {next_state, established, NewSession};
     {error, Error} ->
       log_error(Error),
@@ -295,7 +295,7 @@ established(tcp_fatal, Session) ->
 established(_Event, Session) ->
   error_logger:info_msg("FSM:established/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
-  rtm_rib_mgr:remove(self()),
+  rtm_rib:remove(self()),
   {stop, normal, Session}.
 
 
@@ -366,7 +366,7 @@ connect_to_peer(#session{server     = undefined,
 
 close_connection(#session{server = Server} = Session) ->
   rtm_server:close_peer_connection(Server),
-  rtm_rib_mgr:remove(self()),
+  rtm_rib:remove(self()),
   Session#session{server = undefined}.
 
 release_resources(Session) ->

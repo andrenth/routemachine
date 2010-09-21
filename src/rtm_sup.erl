@@ -11,12 +11,12 @@ init({ListenPort, Peers}) ->
   {ok, ListenSocket} = gen_tcp:listen(ListenPort, SockOpts),
 
   ChildSpecs = [
-    {rtm_rib_mgr,
-      {rtm_rib_mgr, start_link, []},
+    {rtm_rib,
+      {rtm_rib, start_link, []},
       permanent,
       2000,
       worker,
-      [rtm_rib_mgr]},
+      [rtm_rib]},
 
     {rtm_server_sup,
       {rtm_server_sup, start_link, []},

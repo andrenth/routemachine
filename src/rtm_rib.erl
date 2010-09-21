@@ -1,4 +1,4 @@
--module(rtm_rib_mgr).
+-module(rtm_rib).
 -behaviour(gen_server).
 
 -include_lib("bgp.hrl").
@@ -25,10 +25,10 @@ start_link() ->
 %
 
 update(Msg, Fsm) ->
-  gen_server:cast(rtm_rib_mgr, {update, Msg, Fsm}).
+  gen_server:cast(rtm_rib, {update, Msg, Fsm}).
 
 remove(Fsm) ->
-  gen_server:cast(rtm_rib_mgr, {remove, Fsm}).
+  gen_server:cast(rtm_rib, {remove, Fsm}).
 
 %
 % Callbacks for gen_server.
@@ -37,7 +37,7 @@ remove(Fsm) ->
 init(ok) ->
   error_logger:info_msg("Starting RIB server ~w~n", [self()]),
   process_flag(trap_exit, true),
-  register(rtm_rib_mgr, self()),
+  register(rtm_rib, self()),
   {ok, #state{rib = dict:new()}}.
 
 handle_cast({update, #bgp_update{withdrawn_routes = WithdrawnRoutes,
