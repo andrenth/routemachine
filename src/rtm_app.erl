@@ -8,23 +8,9 @@
 -define(DEFAULT_PORT, 1179).
 
 start(_Type, _Args) ->
-  ListenPort =
-    case application:get_env(routemachine, listen_port) of
-      {ok, ConfigPort} -> ConfigPort;
-      undefined        -> ?DEFAULT_PORT
-    end,
-  PeerList = [
-    #session{
-      establishment   = active,
-      local_asn       = 2,
-      peer_asn        = 1,
-      local_addr      = {10,7,5,4},
-      peer_addr       = {10,7,5,167},
-      hold_time       = ?BGP_TIMER_HOLD,
-      keepalive_time  = ?BGP_TIMER_KEEPALIVE,
-      conn_retry_time = ?BGP_TIMER_CONN_RETRY
-    }
-  ],
+  Config = rtm_config:parse("routemachine/routemachine.conf"),
+  ListenPort = rtm_config:get(listen_port, Config, ?DEFAULT_PORT),
+  PeerList = rtm_config:peers(Config),
   Peers = lists:foldl(fun(#session{peer_addr = Ip} = Session, Acc) ->
     dict:store(Ip, Session, Acc)
   end, dict:new(), PeerList),
