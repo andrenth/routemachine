@@ -5,6 +5,7 @@
   peer_asn,
   local_addr,
   peer_addr,
+  networks,
   hold_time,
   hold_timer,
   keepalive_time,

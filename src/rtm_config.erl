@@ -20,14 +20,14 @@ get(Key, Conf, Default) ->
   proplists:get_value(Key, Conf, Default).
 
 get_all(Key, Conf) ->
-  proplists:lookup_all(Key, Conf).
+  proplists:get_all_values(Key, Conf).
 
 build_session(Local, Peers) ->
   build_session(Local, Peers, []).
 
 build_session(_Local, [], Sessions) ->
   Sessions;
-build_session(Local, [{peer, Peer} | Rest], Sessions) ->
+build_session(Local, [Peer | Rest], Sessions) ->
   {asn, LocalAsn}      = get(asn, Local),
   {address, LocalAddr} = get(address, Local),
   {asn, PeerAsn}       = get(asn, Peer),
@@ -37,6 +37,7 @@ build_session(Local, [{peer, Peer} | Rest], Sessions) ->
     local_addr      = LocalAddr,
     peer_asn        = PeerAsn,
     peer_addr       = PeerAddr,
+    networks        = get_all(network, Local),
     hold_time       = get(hold_time, Peer, ?BGP_TIMER_HOLD),
     keepalive_time  = get(keepalive_time, Peer, ?BGP_TIMER_KEEPALIVE),
     conn_retry_time = get(conn_retry_time, Peer, ?BGP_TIMER_CONN_RETRY),

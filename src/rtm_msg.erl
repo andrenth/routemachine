@@ -2,7 +2,8 @@
 -include_lib("bgp.hrl").
 
 -export([validate_header/1, validate_open/3, validate_update/3]).
--export([build_open/3, build_notification/1, build_keepalive/0]).
+-export([build_open/3, build_update/3, build_notification/1,
+         build_keepalive/0]).
 
 %
 % Validations.
@@ -179,7 +180,7 @@ validate_attr_len(#bgp_path_attr{type_code = Type, length = Len} = Attr) ->
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_ORIGIN,
                               value     = Val} = Attr, _)
-               when Val > ?BGP_PATH_ATTR_ORIGIN_INCOMPLETE ->
+               when Val > ?BGP_ORIGIN_INCOMPLETE ->
   {error, {?BGP_UPDATE_ERR_ORIGIN, build_attr(Attr)}};
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_NEXT_HOP,
@@ -206,16 +207,6 @@ validate_as_path([{_Type, LocalASN} | _Rest], LocalASN) ->
   {error, {?BGP_UPDATE_ERR_LOOP, <<>>}};
 validate_as_path([{_Type, _ASN} | Rest], LocalASN) ->
   validate_as_path(Rest, LocalASN).
-
-build_attr(#bgp_path_attr{optional   = Opt,
-                          transitive = Trans,
-                          partial    = Partial,
-                          extended   = Ext,
-                          type_code  = TypeCode,
-                          length     = Len,
-                          raw_value  = Val}) ->
-  <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
-  {Type, Len, Val}.
 
 validate_missing_well_known_attrs(#bgp_update{well_known_attrs = Flags}) ->
   check_well_known_flags(Flags, [?BGP_PATH_ATTR_ORIGIN,
@@ -267,6 +258,16 @@ build_open(ASN, HoldTime, LocalAddr) ->
   Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
   list_to_binary([build_header(?BGP_TYPE_OPEN, Len), ?BGP_OPEN_PATTERN]).
 
+build_update(Attrs, NewPrefixes, Withdrawn) ->
+  PathAttrs = build_path_attrs(Attrs),
+  TotalPathAttrLength = size(PathAttrs),
+  NLRI = build_prefixes(NewPrefixes),
+  WithdrawnRoutes = build_prefixes(Withdrawn),
+  UnfeasableLength = size(WithdrawnRoutes),
+  Len = ?BGP_UPDATE_MIN_LENGTH + TotalPathAttrLength + UnfeasableLength
+      + size(NLRI),
+  list_to_binary([build_header(?BGP_TYPE_UPDATE, Len), ?BGP_UPDATE_PATTERN]).
+
 build_notification({ErrorCode, ErrorSubCode, ErrorData}) ->
   Msg = ?BGP_NOTIFICATION_PATTERN,
   Len = ?BGP_HEADER_LENGTH + size(Msg),
@@ -281,3 +282,25 @@ build_notification(ErrorCode) ->
 
 build_keepalive() ->
   build_header(?BGP_TYPE_KEEPALIVE, ?BGP_HEADER_LENGTH).
+
+build_path_attrs(Attrs) ->
+  list_to_binary(lists:map(fun(#bgp_path_attr{extended = Ext} = Attr) ->
+    {Type, Len, Val} = build_attr(Attr),
+    L = (Ext + 1) * 8,
+    << Type:16,Len:L,Val:Len/binary >>
+  end, Attrs)).
+
+build_prefixes(Prefixes) ->
+  list_to_binary(lists:map(fun({Prefix, Len}) ->
+    << Len:8, (rtm_util:ip_to_num(Prefix)):32 >>
+  end, Prefixes)).
+
+build_attr(#bgp_path_attr{optional   = Opt,
+                          transitive = Trans,
+                          partial    = Partial,
+                          extended   = Ext,
+                          type_code  = TypeCode,
+                          length     = Len,
+                          raw_value  = Val}) ->
+  <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
+  {Type, Len, Val}.

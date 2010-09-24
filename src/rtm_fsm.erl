@@ -205,6 +205,8 @@ open_confirm(stop, Session) ->
 
 open_confirm(keepalive_received, Session) ->
   error_logger:info_msg("FSM:open_confirm/keepalive_received~n"),
+  % Going into established, send our networks to the peer.
+  send_update(Session),
   {next_state, established, Session};
 
 open_confirm({timeout, _Ref, hold}, Session) ->
@@ -413,6 +415,44 @@ send_open(#session{server     = Server,
                    hold_time  = HoldTime,
                    local_addr = LocalAddr}) ->
   Msg = rtm_msg:build_open(ASN, HoldTime, LocalAddr),
+  send(Server, Msg).
+
+send_update(#session{server     = Server,
+                     local_asn  = LocalASN,
+                     local_addr = LocalAddr,
+                     networks   = Networks}) ->
+  PathAttrs = [
+    #bgp_path_attr{
+      optional   = 0,
+      transitive = 1,
+      partial    = 0,
+      extended   = 0,
+      type_code  = ?BGP_PATH_ATTR_ORIGIN,
+      length     = 1,
+      raw_value  = <<?BGP_ORIGIN_IGP>>
+    },
+
+    #bgp_path_attr{
+      optional   = 0,
+      transitive = 1,
+      partial    = 0,
+      extended   = 0,
+      type_code  = ?BGP_PATH_ATTR_AS_PATH,
+      length     = 4,
+      raw_value  = <<?BGP_AS_PATH_SEQUENCE:8, 1:8, LocalASN:16>>
+    },
+
+    #bgp_path_attr{
+      optional   = 0,
+      transitive = 1,
+      partial    = 0,
+      extended   = 0,
+      type_code  = ?BGP_PATH_ATTR_NEXT_HOP,
+      length     = 4,
+      raw_value  = <<(rtm_util:ip_to_num(LocalAddr)):32>>
+    }
+  ],
+  Msg = rtm_msg:build_update(PathAttrs, Networks, []),
   send(Server, Msg).
 
 send_notification(#session{server = Server}, Error) ->

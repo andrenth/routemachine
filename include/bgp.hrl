@@ -34,9 +34,9 @@
 -define(BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR, 16).
 
 % Path attribute values.
--define(BGP_PATH_ATTR_ORIGIN_IGP,        0).
--define(BGP_PATH_ATTR_ORIGIN_EGP,        1).
--define(BGP_PATH_ATTR_ORIGIN_INCOMPLETE, 2).
+-define(BGP_ORIGIN_IGP,        0).
+-define(BGP_ORIGIN_EGP,        1).
+-define(BGP_ORIGIN_INCOMPLETE, 2).
 
 % AS_PATH types.
 -define(BGP_AS_PATH_SET,      1).
