@@ -8,7 +8,7 @@
 -export([init/1]).
 
 % API
--export([trigger/2]).
+-export([trigger/2, state/1]).
 
 % BGP FSM states.
 -export([idle/2, connect/2, active/2, open_sent/2, open_confirm/2,
@@ -36,6 +36,9 @@ init(#session{establishment = Estab} = Session) ->
 
 trigger(FSM, Event) ->
   gen_fsm:send_event(FSM, Event).
+
+state(FSM) ->
+  gen_fsm:sync_send_all_state_event(FSM, state).
 
 %
 % BGP FSM.
@@ -301,6 +304,7 @@ established(_Event, Session) ->
 %
 % gen_fsm callbacks.
 %
+
 terminate(_Reason, _StateName, Session) ->
   release_resources(Session),
   ok.
@@ -311,8 +315,8 @@ code_change(_OldVsn, StateName, Session, _Extra) ->
 handle_event(_Event, _StateName, Session) ->
   {stop, unexpected_event, Session}.
 
-handle_sync_event(_Event, _From, _StateName, Session) ->
-  {stop, unexpected_sync_event, Session}.
+handle_sync_event(state, _From, StateName, Session) ->
+  {reply, StateName, StateName, Session}.
 
 handle_info(_Info, _StateName, Session) ->
   {stop, unexpected_info, Session}.

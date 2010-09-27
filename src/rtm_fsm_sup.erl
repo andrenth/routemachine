@@ -3,7 +3,7 @@
 
 -include_lib("session.hrl").
 
--export([start_link/1, start_child/1, delete_child/1]).
+-export([start_link/1, start_child/1, terminate_child/1, delete_child/1]).
 -export([init/1]).
 
 start_link(ActiveSessions) ->
@@ -12,6 +12,9 @@ start_link(ActiveSessions) ->
 start_child(Session) ->
   Spec = build_spec(Session),
   supervisor:start_child(?MODULE, Spec).
+
+terminate_child(Id) ->
+  supervisor:terminate_child(?MODULE, Id).
 
 delete_child(Id) ->
   supervisor:delete_child(?MODULE, Id).

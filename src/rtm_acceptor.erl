@@ -37,7 +37,7 @@ handle_info(timeout, #state{listen_socket = ListenSocket,
   {ok, {PeerAddr, _Port}} = inet:peername(Socket),
   case dict:find(PeerAddr, Peers) of
     {ok, Session} ->
-      start_fsm(Session, Socket, PeerAddr);
+      start_fsm(Socket, Session);
     error ->
       error_logger:warn_msg("Connect attempt from bad peer ~p~n", [PeerAddr]),
       gen_tcp:close(Socket)
@@ -61,7 +61,7 @@ handle_cast(_Request, State) ->
 % Internal functions.
 %
 
-start_fsm(Session, Socket, PeerAddr) ->
+start_fsm(Socket, #session{peer_addr = PeerAddr} = Session) ->
   PassiveSession = Session#session{establishment = {passive, Socket}},
   case rtm_fsm_sup:start_child(PassiveSession) of
     {ok, Pid} ->
@@ -70,9 +70,28 @@ start_fsm(Session, Socket, PeerAddr) ->
       inet:setopts(Socket, [{active, once}]);
     {error, already_present} ->
       ok = rtm_fsm_sup:delete_child({rtm_fsm, PeerAddr}),
-      start_fsm(Session, Socket, PeerAddr);
-    {error, {already_started, _Pid}} ->
-      error_logger:info_msg("Rejecting active connection from peer ~p~n",
-                            [PeerAddr]),
-      gen_tcp:close(Socket)
+      start_fsm(Socket, Session);
+    {error, {already_started, Pid}} ->
+      error_logger:info_msg("Connection collision detected~n"),
+      handle_collision(Socket, Session, Pid)
   end.
+
+handle_collision(Socket, #session{peer_addr = PeerAddr} = Session, Pid) ->
+  case rtm_fsm:state(Pid) of
+    established ->
+      error_logger:info_msg("Rejecting active connection from peer ~p~n",
+        [PeerAddr]),
+      send_notification(Socket, ?BGP_ERR_CEASE),
+      gen_tcp:close(Socket);
+    _Other ->
+      % When the existing FSM is not in the established state,
+      % prefer to use the incoming connection.
+      error_logger:info_msg("Accepting active connection from peer ~p~n",
+        [PeerAddr]),
+      ok = rtm_fsm_sup:terminate_child({rtm_fsm, PeerAddr}),
+      ok = rtm_fsm_sup:delete_child({rtm_fsm, PeerAddr}),
+      start_fsm(Socket, Session)
+  end.
+
+send_notification(Socket, Error) ->
+  gen_tcp:send(Socket, rtm_msg:build_notification(Error)).
