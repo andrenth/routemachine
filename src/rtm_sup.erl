@@ -35,12 +35,12 @@ init({ListenPort, Sessions}) ->
       supervisor,
       [rtm_fsm_sup]},
 
-    {rtm_main,
-      {rtm_main, start_link, [ListenSocket, Sessions]},
+    {rtm_acceptor,
+      {rtm_acceptor, start_link, [ListenSocket, Sessions]},
       permanent,
       brutal_kill,
       worker,
-      [rtm_main]}
+      [rtm_acceptor]}
   ],
 
   {ok, {{one_for_one, 1, 1}, ChildSpecs}}.
