@@ -21,8 +21,14 @@
 start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
 
-init(Session) ->
-  {ok, idle, Session}.
+init(#session{establishment = Estab} = Session) ->
+  case Estab of
+    active ->
+      trigger(self(), start),
+      {ok, idle, Session};
+    {passive, _Port} ->
+      {ok, idle, Session}
+  end.
 
 %
 % API
@@ -37,28 +43,19 @@ trigger(FSM, Event) ->
 
 % Idle state.
 
-idle(start, #session{establishment = Estab, peer_addr = PeerAddr} = Session) ->
-  % When starting up, we register ourselves with the FSM manager. This
-  % avoids collisions in case an active FSM receives a new connection,
-  % and is much simpler than the scheme described in the RFC.
-  case rtm_fsm_mgr:register(PeerAddr) of
-    ok ->
-      ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
-      NewSession = Session#session{conn_retry_timer = ConnRetry},
-      case Estab of
-        active ->
-          error_logger:info_msg("FSM:idle/start(active)~n"),
-          EstabSession = connect_to_peer(NewSession),
-          {next_state, connect, EstabSession};
-        {passive, Socket} ->
-          error_logger:info_msg("FSM:idle/start(passive)~n"),
-          {ok, Pid} = rtm_server_sup:start_child(self()),
-          gen_tcp:controlling_process(Socket, Pid),
-          {next_state, active, NewSession#session{server = Pid}}
-      end;
-    error ->
-      error_logger:info_msg("FSM:idle/start(peer already connected)~n"),
-      {stop, normal, Session}
+idle(start, #session{establishment = Estab} = Session) ->
+  ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
+  NewSession = Session#session{conn_retry_timer = ConnRetry},
+  case Estab of
+    active ->
+      error_logger:info_msg("FSM:idle/start(active)~n"),
+      EstabSession = connect_to_peer(NewSession),
+      {next_state, connect, EstabSession};
+    {passive, Socket} ->
+      error_logger:info_msg("FSM:idle/start(passive)~n"),
+      {ok, Pid} = rtm_server_sup:start_child(self()),
+      gen_tcp:controlling_process(Socket, Pid),
+      {next_state, active, NewSession#session{server = Pid}}
   end;
 
 idle(_Error, Session) ->
@@ -304,9 +301,8 @@ established(_Event, Session) ->
 %
 % gen_fsm callbacks.
 %
-terminate(_Reason, _StateName, #session{peer_addr = PeerAddr} = Session) ->
+terminate(_Reason, _StateName, Session) ->
   release_resources(Session),
-  rtm_fsm_mgr:unregister(PeerAddr),
   ok.
 
 code_change(_OldVsn, StateName, Session, _Extra) ->

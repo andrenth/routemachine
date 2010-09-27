@@ -1,14 +1,17 @@
 -module(rtm_sup).
 
+-include_lib("session.hrl").
+
 -export([start_link/2]).
 -export([init/1]).
 
-start_link(ListenPort, Peers) ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, {ListenPort, Peers}).
+start_link(ListenPort, Sessions) ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, {ListenPort, Sessions}).
 
-init({ListenPort, Peers}) ->
+init({ListenPort, Sessions}) ->
   SockOpts = [binary, {reuseaddr, true}, {packet, raw}, {active, false}],
   {ok, ListenSocket} = gen_tcp:listen(ListenPort, SockOpts),
+  ActiveSessions = dict:filter(fun is_active/2, Sessions),
 
   ChildSpecs = [
     {rtm_rib,
@@ -26,21 +29,14 @@ init({ListenPort, Peers}) ->
       [rtm_server_sup]},
 
     {rtm_fsm_sup,
-      {rtm_fsm_sup, start_link, []},
+      {rtm_fsm_sup, start_link, [ActiveSessions]},
       permanent,
       infinity,
       supervisor,
       [rtm_fsm_sup]},
 
-    {rtm_fsm_mgr,
-      {rtm_fsm_mgr, start_link, []},
-      permanent,
-      brutal_kill,
-      worker,
-      [rtm_fsm_mgr]},
-
     {rtm_main,
-      {rtm_main, start_link, [ListenSocket, Peers]},
+      {rtm_main, start_link, [ListenSocket, Sessions]},
       permanent,
       brutal_kill,
       worker,
@@ -48,3 +44,6 @@ init({ListenPort, Peers}) ->
   ],
 
   {ok, {{one_for_one, 1, 1}, ChildSpecs}}.
+
+is_active(_IP, #session{establishment = active}) -> true;
+is_active(_IP, #session{establishment = passive}) -> false.

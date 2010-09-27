@@ -26,10 +26,9 @@ start_link(ListenSocket, Peers) ->
 % Callbacks for gen_server.
 %
 
-init(#state{peers = Peers} = State) ->
+init(State) ->
   process_flag(trap_exit, true),
   register(rtm_main, self()),
-  start_active_sessions(Peers),
   {ok, State, 0}.
 
 handle_info(timeout, #state{listen_socket = ListenSocket,
@@ -37,13 +36,10 @@ handle_info(timeout, #state{listen_socket = ListenSocket,
   {ok, Socket} = gen_tcp:accept(ListenSocket),
   {ok, {PeerAddr, _Port}} = inet:peername(Socket),
   case dict:find(PeerAddr, Peers) of
-    {ok, S} ->
-      Session = S#session{establishment = {passive, Socket}},
-      {ok, Pid} = rtm_fsm_sup:start_child(Session),
-      gen_tcp:controlling_process(Socket, Pid),
-      rtm_fsm:trigger(Pid, start),
-      inet:setopts(Socket, [{active, once}]);
+    {ok, Session} ->
+      start_fsm(Session, Socket, PeerAddr);
     error ->
+      error_logger:warn_msg("Connect attempt from bad peer ~p~n", [PeerAddr]),
       gen_tcp:close(Socket)
   end,
   {noreply, State, 0}.
@@ -65,13 +61,18 @@ handle_cast(_Request, State) ->
 % Internal functions.
 %
 
-start_active_sessions(Peers) ->
-  dict:fold(fun(_Ip, #session{establishment = Estab} = Session, ok) ->
-    case Estab of
-      active ->
-        {ok, Pid} = rtm_fsm_sup:start_child(Session),
-        rtm_fsm:trigger(Pid, start);
-      passive ->
-        ok
-    end
-  end, ok, Peers).
+start_fsm(Session, Socket, PeerAddr) ->
+  PassiveSession = Session#session{establishment = {passive, Socket}},
+  case rtm_fsm_sup:start_child(PassiveSession) of
+    {ok, Pid} ->
+      gen_tcp:controlling_process(Socket, Pid),
+      rtm_fsm:trigger(Pid, start),
+      inet:setopts(Socket, [{active, once}]);
+    {error, already_present} ->
+      ok = rtm_fsm_sup:delete_child({rtm_fsm, PeerAddr}),
+      start_fsm(Session, Socket, PeerAddr);
+    {error, {already_started, _Pid}} ->
+      error_logger:info_msg("Rejecting active connection from peer ~p~n",
+                            [PeerAddr]),
+      gen_tcp:close(Socket)
+  end.
