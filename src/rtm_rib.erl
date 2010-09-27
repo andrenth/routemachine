@@ -126,7 +126,7 @@ add_routes(RIB, Attrs, Prefixes, Fsm) ->
     case dict:find(LenPref, AccRIB) of
       {ok, Entries} ->
         NewEntries = insert_route(Entries, Prefix, Len, Route, LocalPref),
-        dict:stopre(LenPref, NewEntries);
+        dict:store(LenPref, NewEntries, AccRIB);
       error ->
         add_route(Prefix, Len, GW),
         dict:store(LenPref, [{LocalPref, Route#route{active = true}}], AccRIB)
@@ -138,20 +138,26 @@ insert_route(Entries, Prefix, Len, Route, LocalPref) ->
   insert_route(Entries, Prefix, Len, Route, LocalPref, true).
 
 insert_route([], _Prefix, _Len, NewRoute, NewLocalPref, false) ->
-  [{NewRoute, NewLocalPref}];
+  [{NewLocalPref, NewRoute}];
+insert_route([], Prefix, Len, #route{next_hop = GW} = NewRoute, NewLocalPref,
+             true) ->
+  add_route(Prefix, Len, GW),
+  [{NewLocalPref, NewRoute#route{active = true}}];
 insert_route([{LocalPref, #route{next_hop = GW} = Route} = LR | Rest],
              Prefix, Len, #route{next_hop = NewGW} = NewRoute,
              NewLocalPref, First) ->
   case NewLocalPref > LocalPref of
     true ->
-      case First of
-        true ->
-          del_route(Prefix, Len, GW),
-          add_route(Prefix, Len, NewGW);
-        false ->
-          ok
-      end,
-      [{NewLocalPref, NewRoute} |
+      Active =
+        case First of
+          true ->
+            del_route(Prefix, Len, GW),
+            add_route(Prefix, Len, NewGW),
+            true;
+          false ->
+            false
+        end,
+      [{NewLocalPref, NewRoute#route{active = Active}} |
         [{LocalPref, Route#route{active = false}} | Rest]];
     false ->
       [LR | insert_route(Rest, Prefix, Len, NewRoute, NewLocalPref, false)]
