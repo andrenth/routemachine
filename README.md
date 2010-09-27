@@ -1,5 +1,8 @@
 RouteMachine
-------------
+============
+
+Intro
+-----
 
 This is still a very incomplete BGP daemon. It's being tested only against
 Quagga so far. If you want to give it a try, do the following:
