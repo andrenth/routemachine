@@ -11,9 +11,8 @@ Quagga so far. If you want to give it a try, do the following:
     $ cd routemachine
     $ vim routemachine.conf
     $ rebar compile
-    $ gcc -Wall -o priv/rtm c_src/rtm.c
-    $ sudo chown root priv/rtm
-    $ sudo chmod u+s priv/rtm
+    # chown root priv/rtm
+    # chmod u+s priv/rtm
     $ cd ..
     $ sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 179 \
                     -j REDIRECT --to-port 1179
