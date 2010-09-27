@@ -37,7 +37,7 @@ remove(Fsm) ->
 init(ok) ->
   error_logger:info_msg("Starting RIB server ~w~n", [self()]),
   process_flag(trap_exit, true),
-  register(rtm_rib, self()),
+  register(?MODULE, self()),
   {ok, #state{rib = dict:new()}}.
 
 handle_cast({update, #bgp_update{withdrawn_routes = WithdrawnRoutes,
