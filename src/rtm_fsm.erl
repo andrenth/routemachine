@@ -57,13 +57,13 @@ idle(start, #session{establishment = Estab} = Session) ->
     {passive, Socket} ->
       error_logger:info_msg("FSM:idle/start(passive)~n"),
       {ok, Pid} = rtm_server_sup:start_child(self()),
+      inet:setopts(Socket, [{active, once}]),
       gen_tcp:controlling_process(Socket, Pid),
       {next_state, active, NewSession#session{server = Pid}}
   end;
 
 idle(_Error, Session) ->
   error_logger:info_msg("FSM:idle/error(~p)~n", [_Error]),
-  % TODO exponential backoff for reconnection attempt.
   NewSession = close_connection(Session),
   {next_state, idle, NewSession}.
 

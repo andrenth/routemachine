@@ -41,6 +41,7 @@ build_session(Local, [Peer | Rest], Sessions) ->
     hold_time       = get(hold_time, Peer, ?BGP_TIMER_HOLD),
     keepalive_time  = get(keepalive_time, Peer, ?BGP_TIMER_KEEPALIVE),
     conn_retry_time = get(conn_retry_time, Peer, ?BGP_TIMER_CONN_RETRY),
+    idle_time       = get(idle_time, Peer, ?BGP_TIMER_IDLE),
     establishment   = get(establishment, Peer, active)
   },
   build_session(Local, Rest, [Session | Sessions]).

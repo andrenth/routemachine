@@ -35,14 +35,17 @@ handle_info(timeout, #state{listen_socket = ListenSocket,
                             peers         = Peers} = State) ->
   {ok, Socket} = gen_tcp:accept(ListenSocket),
   {ok, {PeerAddr, _Port}} = inet:peername(Socket),
-  case dict:find(PeerAddr, Peers) of
-    {ok, Session} ->
-      start_fsm(Socket, Session);
-    error ->
-      error_logger:warn_msg("Connect attempt from bad peer ~p~n", [PeerAddr]),
-      gen_tcp:close(Socket)
-  end,
-  {noreply, State, 0}.
+  NewState =
+    case dict:find(PeerAddr, Peers) of
+      {ok, Session} ->
+        NewSession = start_fsm(Socket, Session),
+        State#state{peers = dict:store(PeerAddr, NewSession, Peers)};
+      error ->
+        error_logger:warn_msg("Connect attempt from bad peer ~p~n", [PeerAddr]),
+        gen_tcp:close(Socket),
+        State
+    end,
+  {noreply, NewState, 0}.
 
 terminate(_Reason, #state{listen_socket = ListenSocket}) ->
   gen_tcp:close(ListenSocket),
@@ -61,20 +64,32 @@ handle_cast(_Request, State) ->
 % Internal functions.
 %
 
-start_fsm(Socket, #session{peer_addr = PeerAddr} = Session) ->
+start_fsm(Socket, Session) ->
+  start_fsm(Socket, Session, undefined).
+
+start_fsm(Socket, #session{peer_addr = PeerAddr,
+                           idle_time = IdleTime} = Session, Delay) ->
   PassiveSession = Session#session{establishment = {passive, Socket}},
   case rtm_fsm_sup:start_child(PassiveSession) of
     {ok, Pid} ->
       gen_tcp:controlling_process(Socket, Pid),
-      rtm_fsm:trigger(Pid, start),
-      inet:setopts(Socket, [{active, once}]);
+      trigger_start_event(Pid, Delay),
+      % Don't return the passive session. If this session is closed,
+      % we'll actively try to start a new one.
+      Session;
     {error, already_present} ->
       ok = rtm_fsm_sup:delete_child({rtm_fsm, PeerAddr}),
-      start_fsm(Socket, Session);
+      start_fsm(Socket, Session#session{idle_time = IdleTime * 2}, IdleTime);
     {error, {already_started, Pid}} ->
       error_logger:info_msg("Connection collision detected~n"),
       handle_collision(Socket, Session, Pid)
   end.
+
+trigger_start_event(Pid, undefined) ->
+  rtm_fsm:trigger(Pid, start);
+trigger_start_event(Pid, Delay) ->
+  error_logger:info_msg("Will trigger a start event in ~p seconds~n", [Delay]),
+  timer:apply_after(timer:seconds(Delay), rtm_fsm, trigger, [Pid, start]).
 
 handle_collision(Socket, #session{peer_addr = PeerAddr} = Session, Pid) ->
   case rtm_fsm:state(Pid) of
@@ -82,7 +97,8 @@ handle_collision(Socket, #session{peer_addr = PeerAddr} = Session, Pid) ->
       error_logger:info_msg("Rejecting active connection from peer ~p~n",
         [PeerAddr]),
       send_notification(Socket, ?BGP_ERR_CEASE),
-      gen_tcp:close(Socket);
+      gen_tcp:close(Socket),
+      Session;
     _Other ->
       % When the existing FSM is not in the established state,
       % prefer to use the incoming connection.
