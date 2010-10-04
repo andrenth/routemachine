@@ -18,6 +18,7 @@
   data_proc,
   msg_type,
   msg_len,
+  marker,
   fsm
 }).
 
@@ -101,9 +102,11 @@ process_header(#state{data = Data} = State)
                          data_proc = fun process_message/1},
   case rtm_parser:parse_header(Bin) of
     {ok, Hdr} ->
-      #bgp_header{msg_type = Type, msg_len = Len} = Hdr,
+      #bgp_header{msg_type = Type, msg_len = Len, marker = Marker} = Hdr,
       MsgLen = Len - ?BGP_HEADER_LENGTH,
-      process_message(NewState#state{msg_type = Type, msg_len = MsgLen});
+      process_message(NewState#state{msg_type = Type,
+                                     msg_len  = MsgLen,
+                                     marker   = Marker});
     {error, Error} ->
       send_notification(Error),
       NewState
@@ -116,19 +119,20 @@ process_header(State) ->
 process_message(#state{data     = Data,
                        msg_type = Type,
                        msg_len  = Length,
+                       marker   = Marker,
                        fsm      = FSM} = State) when size(Data) >= Length ->
   {Bin, Rest} = split_binary(Data, Length),
   NewState = State#state{data = Rest, data_proc = fun process_header/1},
-  Event = receipt_event(Type, Bin, Length),
+  Event = receipt_event(Type, Bin, Length, Marker),
   rtm_fsm:trigger(FSM, Event),
   process_header(NewState);
 
 process_message(State) ->
   State.
 
-receipt_event(Type, Bin, Len) ->
+receipt_event(Type, Bin, Len, Marker) ->
   case Type of
-    ?BGP_TYPE_OPEN         -> {open_received, Bin};
+    ?BGP_TYPE_OPEN         -> {open_received, Bin, Marker};
     ?BGP_TYPE_UPDATE       -> {update_received, Bin, Len};
     ?BGP_TYPE_NOTIFICATION -> {notification_received, Bin};
     ?BGP_TYPE_KEEPALIVE    -> keepalive_received

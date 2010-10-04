@@ -1,7 +1,7 @@
 -module(rtm_msg).
 -include_lib("bgp.hrl").
 
--export([validate_header/1, validate_open/3, validate_update/3]).
+-export([validate_header/1, validate_open/4, validate_update/3]).
 -export([build_open/3, build_update/3, build_notification/1,
          build_keepalive/0]).
 
@@ -15,13 +15,13 @@ validate_header(Hdr) ->
            fun validate_msg_len/1,
            fun validate_type/1]).
 
-validate_open(Msg, ConfigASN, ConfigID) ->
+validate_open(Msg, Marker, ConfigASN, ConfigID) ->
   validate(Msg, ?BGP_ERR_OPEN,
            [fun validate_version/1,
             fun(M) -> validate_asn(M, ConfigASN) end,
             fun validate_hold_time/1,
             fun(M) -> validate_bgp_id(M, ConfigID) end,
-            fun validate_opt_params/1]).
+            fun(M) -> validate_opt_params(M, Marker) end]).
 
 validate_update(Msg, MsgLen, LocalASN) ->
   validate(Msg, ?BGP_ERR_UPDATE,
@@ -39,9 +39,9 @@ validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN,
                             marker = ?BGP_HEADER_MARKER}) ->
   ok;
 validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN}) ->
-  {error, {?BGP_HEADER_ERR_SYNC, <<>>}};
+  {error, ?BGP_HEADER_ERR_SYNC};
 validate_marker(#bgp_header{}) ->
-  ok. % TODO Handle auth.
+  ok.
 
 validate_msg_len(#bgp_header{msg_type = ?BGP_TYPE_OPEN, msg_len = Len})
                  when Len >= ?BGP_OPEN_MIN_LENGTH andalso
@@ -78,23 +78,37 @@ validate_version(#bgp_open{}) ->
 validate_asn(#bgp_open{asn = ASN}, ConfigASN) ->
   case ASN =:= ConfigASN of
     true  -> ok;
-    false -> {error, {?BGP_OPEN_ERR_PEER_AS, <<>>}}
+    false -> {error, ?BGP_OPEN_ERR_PEER_AS}
   end.
 
 validate_hold_time(#bgp_open{hold_time = HoldTime}) when HoldTime < 3 ->
-  {error, {?BGP_OPEN_ERR_PEER_AS, <<>>}};
+  {error, ?BGP_OPEN_ERR_PEER_AS};
 validate_hold_time(#bgp_open{}) ->
   ok.
 
 validate_bgp_id(#bgp_open{bgp_id = Id}, ConfigID) ->
   case Id =:= ConfigID of
     true  -> ok;
-    false -> {error, {?BGP_OPEN_ERR_BGP_ID, <<>>}}
+    false -> {error, ?BGP_OPEN_ERR_BGP_ID}
   end.
 
-% TODO
-validate_opt_params(#bgp_open{}) ->
-  ok.
+validate_opt_params(#bgp_open{opt_params = OptParams}, Marker) ->
+  validate_params(OptParams, Marker).
+
+validate_params([], _Marker) ->
+  ok;
+validate_params([#bgp_opt_param{type = Type, length = Len, value = Val} | Rest],
+                Marker) ->
+  validate_param(Type, Val, Len, Marker),
+  validate_params(Rest, Marker).
+
+validate_param(?BGP_PARAM_AUTH_INFO, ?BGP_PARAM_AUTH_INFO_PATTERN,
+               Len, Marker) ->
+  % TODO validate authentication info.
+  {_,_,_,_} = {AuthCode, AuthData, Len, Marker},
+  ok;
+validate_param(_, _, _, _) ->
+  {error, ?BGP_OPEN_ERR_OPT_PARAM}.
 
 
 % UPDATE message validation.
@@ -103,7 +117,7 @@ validate_opt_params(#bgp_open{}) ->
 validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
                        MsgLen) ->
   case ?BGP_UPDATE_MIN_LENGTH + ULen + ALen > MsgLen + ?BGP_HEADER_LENGTH of
-    true  -> {error, {?BGP_UPDATE_ERR_ATTR_LIST, <<>>}};
+    true  -> {error, ?BGP_UPDATE_ERR_ATTR_LIST};
     false -> ok
   end.
 
@@ -126,7 +140,7 @@ validate_attr([Attr], LocalASN) ->
 
 validate_attr([_Attr | _More], _LocalASN) ->
   % Duplicate attribute.
-  throw({error, {?BGP_UPDATE_ERR_ATTR_LIST, <<>>}}).
+  throw({error, ?BGP_UPDATE_ERR_ATTR_LIST}).
 
 
 validate_flags(Attr) ->
@@ -202,9 +216,9 @@ validate_as_path([], _LocalASN) ->
 validate_as_path([{Type, _ASN} | _Rest], _LocalASN)
                  when Type =/= ?BGP_AS_PATH_SET
                  andalso Type =/= ?BGP_AS_PATH_SEQUENCE ->
-  {error, {?BGP_UPDATE_ERR_AS_PATH, <<>>}};
+  {error, ?BGP_UPDATE_ERR_AS_PATH};
 validate_as_path([{_Type, LocalASN} | _Rest], LocalASN) ->
-  {error, {?BGP_UPDATE_ERR_LOOP, <<>>}};
+  {error, ?BGP_UPDATE_ERR_LOOP};
 validate_as_path([{_Type, _ASN} | Rest], LocalASN) ->
   validate_as_path(Rest, LocalASN).
 
@@ -239,7 +253,8 @@ validate(_Rec, _Code, []) ->
 validate(Rec, Code, [Validator | Rest]) ->
   case Validator(Rec) of
     ok -> validate(Rec, Code, Rest);
-    {error, {SubCode, Data}} -> {error, {Code, SubCode, Data}}
+    {error, {SubCode, Data}} -> {error, {Code, SubCode, Data}};
+    {error, SubCode} -> {error, {Code, SubCode, <<>>}}
   end.
 
 %

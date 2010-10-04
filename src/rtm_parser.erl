@@ -1,7 +1,7 @@
 -module(rtm_parser).
 -include_lib("bgp.hrl").
 
--export([parse_header/1, parse_open/3, parse_update/3, parse_notification/1]).
+-export([parse_header/1, parse_open/4, parse_update/3, parse_notification/1]).
 
 %
 % Parser functions.
@@ -18,7 +18,7 @@ parse_header(?BGP_HEADER_PATTERN) ->
     Error -> Error
   end.
 
-parse_open(?BGP_OPEN_PATTERN, ConfigASN, ConfigID) ->
+parse_open(?BGP_OPEN_PATTERN, Marker, ConfigASN, ConfigID) ->
   Msg = #bgp_open{
     version        = Version,
     asn            = ASN,
@@ -27,7 +27,7 @@ parse_open(?BGP_OPEN_PATTERN, ConfigASN, ConfigID) ->
     opt_params_len = OptParamsLen,
     opt_params     = parse_opt_params(OptParams)
   },
-  case rtm_msg:validate_open(Msg, ConfigASN, ConfigID) of
+  case rtm_msg:validate_open(Msg, Marker, ConfigASN, ConfigID) of
     ok    -> {ok, Msg};
     Error -> Error
   end.
@@ -63,15 +63,14 @@ parse_opt_params(Params) ->
 
 parse_opt_params(<<>>, ParsedParams) ->
   ParsedParams;
-
 parse_opt_params(?BGP_OPT_PARAMS_PATTERN, ParsedParams) ->
-  % TODO For now don't parse individual opt params.
-  %Param = parse_opt_param(ParamType, ParamValue, ParamLength),
-  Param = ParamValue,
+  Param = #bgp_opt_param{
+    type   = ParamType,
+    length = ParamLength,
+    value  = ParamValue
+  },
   parse_opt_params(OtherParams, [Param | ParsedParams]).
 
-parse_opt_param(?BGP_PARAM_AUTH_INFO, ?BGP_PARAM_AUTH_INFO_PATTERN, _Len) ->
-  #bgp_auth_info{code = AuthCode, data = AuthData}.
 
 % Helpers for UPDATE.
 

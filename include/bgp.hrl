@@ -105,9 +105,10 @@
   opt_params
 }).
 
--record(bgp_auth_info, {
-  code,
-  data
+-record(bgp_opt_param, {
+  type,
+  length,
+  value
 }).
 
 -record(bgp_update,{
