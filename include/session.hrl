@@ -11,5 +11,6 @@
   keepalive_time,
   keepalive_timer,
   conn_retry_time,
-  conn_retry_timer
+  conn_retry_timer,
+  idle_time
 }).
