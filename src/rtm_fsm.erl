@@ -424,7 +424,7 @@ update_rib(#session{
            }) ->
   Route = #route{
     active     = false,
-    next_hop   = attr_value(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
+    next_hop   = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
     path_attrs = PathAttrs,
     ebgp       = is_ebgp(Session),
     bgp_id     = PeerBGPId,
@@ -444,10 +444,10 @@ redistribute_routes(Session, Attrs, Added, Deleted, Replacements) ->
 distribute_local_routes(#session{local_addr = LocalAddr,
                                  networks = Networks} = Session) ->
   % 
-  PathAttrs = dict:from_list([
-    {?BGP_PATH_ATTR_ORIGIN,   [attr_origin(?BGP_ORIGIN_IGP)]},
-    {?BGP_PATH_ATTR_AS_PATH,  [attr_as_path(<<>>)]},
-    {?BGP_PATH_ATTR_NEXT_HOP, [attr_next_hop(LocalAddr)]}
+  PathAttrs = rtm_attr:from_list([
+    {?BGP_PATH_ATTR_ORIGIN,   rtm_attr:origin(?BGP_ORIGIN_IGP)},
+    {?BGP_PATH_ATTR_AS_PATH,  rtm_attr:as_path(<<>>)},
+    {?BGP_PATH_ATTR_NEXT_HOP, rtm_attr:next_hop(LocalAddr)}
   ]),
   send_updates(Session, peers(), PathAttrs, Networks, []).
 
@@ -472,63 +472,6 @@ ebgp_peers() ->
 ibgp_peers() ->
   pg2:get_members(established_ibgp).
 
-prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
-                                type_code = ?BGP_PATH_ATTR_AS_PATH,
-                                raw_value = Path} = ASPath) ->
-  NewPath = case Path of
-    << ?BGP_AS_PATH_SEQUENCE:8, N:8, FirstASN:16, Rest/binary >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, (N+1):8, ASN:16, FirstASN:16, Rest/binary >>;
-    << ?BGP_AS_PATH_SET:8, _Rest/binary >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16, Path/binary >>;
-    << >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16 >>
-  end,
-  Length = size(NewPath),
-  ASPath#bgp_path_attr{
-    extended  = case Extended of 0 -> extended_bit(Length); 1 -> 1 end,
-    length    = Length,
-    raw_value = NewPath
-  }.
-
-attr_origin(Origin) ->
-  build_attr(?BGP_PATH_ATTR_ORIGIN, <<Origin:8>>, [transitive]).
-
-attr_as_path(Path) ->
-  build_attr(?BGP_PATH_ATTR_AS_PATH, Path, [transitive]).
-
-attr_next_hop(Addr) ->
-  Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
-  build_attr(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
-
-build_attr(TypeCode, Bin, Flags) ->
-  Length = size(Bin),
-  InitAttr = #bgp_path_attr{
-    optional   = 0,
-    transitive = 0,
-    partial    = 0,
-    extended   = extended_bit(Length),
-    type_code  = TypeCode,
-    length     = Length,
-    raw_value  = Bin
-  },
-  lists:foldl(fun(Flag, Acc) ->
-    case Flag of
-      optional   -> Acc#bgp_path_attr{optional   = 1};
-      transitive -> Acc#bgp_path_attr{transitive = 1};
-      partial    -> Acc#bgp_path_attr{partial    = 1};
-      extended   -> Acc#bgp_path_attr{extended   = 1}
-    end
-  end, InitAttr, Flags).
-
-attr_value(Attr, PathAttrs) ->
-  [#bgp_path_attr{value = Value}] = dict:fetch(Attr, PathAttrs),
-  Value.
-
-extended_bit(Length) ->
-  case Length > 255 of
-    true  -> 1;
-    false -> 0
-  end.
 
 % Message sending.
 
@@ -577,28 +520,10 @@ update_path_attrs(#session{local_asn  = LocalASN,
                   PathAttrs) ->
   UpdateAttrs = case established_group(Session) of
     established_ebgp ->
-      fun(TypeCode, [Attr], NewPathAttrs) ->
-        case TypeCode of
-          ?BGP_PATH_ATTR_AS_PATH ->
-            NewASPath = prepend_asn(LocalASN, Attr),
-            dict:store(?BGP_PATH_ATTR_AS_PATH, [NewASPath], NewPathAttrs);
-          ?BGP_PATH_ATTR_NEXT_HOP ->
-            NewNextHop = attr_next_hop(LocalAddr),
-            dict:store(?BGP_PATH_ATTR_NEXT_HOP, [NewNextHop], NewPathAttrs);
-          _ ->
-            NewPathAttrs
-        end
+      fun(TypeCode, Attr, Attrs) ->
+        rtm_attr:update_for_ebgp(TypeCode, Attr, Attrs, LocalASN, LocalAddr)
       end;
     established_ibgp ->
-      fun(TypeCode, [Attr], NewPathAttrs) ->
-        case TypeCode of
-          ?BGP_PATH_ATTR_MED ->
-            dict:store(?BGP_PATH_ATTR_MED, [Attr], NewPathAttrs);
-          ?BGP_PATH_ATTR_LOCAL_PREF ->
-            dict:store(?BGP_PATH_ATTR_LOCAL_PREF, [Attr], NewPathAttrs);
-          _ ->
-            NewPathAttrs
-        end
-      end
+      fun rtm_attr:update_for_ibgp/3
   end,
-  dict:fold(UpdateAttrs, PathAttrs, PathAttrs).
+  rtm_attr:fold(UpdateAttrs, PathAttrs, PathAttrs).

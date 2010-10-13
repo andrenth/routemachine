@@ -175,9 +175,9 @@ validate_flags(Attr) ->
                    transitive = 1} ->
       ok;
     #bgp_path_attr{optional = 0} ->
-      {error, {?BGP_UPDATE_ERR_ATTR_UNRECOG, build_attr(Attr)}};
+      {error, {?BGP_UPDATE_ERR_ATTR_UNRECOG, rtm_attr:to_binary(Attr)}};
     _ ->
-      {error, {?BGP_UPDATE_ERR_ATTR_FLAGS, build_attr(Attr)}}
+      {error, {?BGP_UPDATE_ERR_ATTR_FLAGS, rtm_attr:to_binary(Attr)}}
   end.
 
 validate_attr_len(#bgp_path_attr{type_code = Type, length = Len} = Attr) ->
@@ -190,20 +190,20 @@ validate_attr_len(#bgp_path_attr{type_code = Type, length = Len} = Attr) ->
     {?BGP_PATH_ATTR_ATOMIC_AGGR, 0} -> ok;
     {?BGP_PATH_ATTR_AGGREGATOR,  6} -> ok;
     _ ->
-      {error, {?BGP_UPDATE_ERR_ATTR_LENGTH, build_attr(Attr)}}
+      {error, {?BGP_UPDATE_ERR_ATTR_LENGTH, rtm_attr:to_binary(Attr)}}
   end.
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_ORIGIN,
                               value     = Val} = Attr, _)
                when Val > ?BGP_ORIGIN_INCOMPLETE ->
-  {error, {?BGP_UPDATE_ERR_ORIGIN, build_attr(Attr)}};
+  {error, {?BGP_UPDATE_ERR_ORIGIN, rtm_attr:to_binary(Attr)}};
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_NEXT_HOP,
                               value     = Val} = Attr, _)
                when Val =:= 0 ->
   % XXX can any other syntatic validation be done?
   % TODO semantic validation for eBGP as in section 6.3.
-  {error, {?BGP_UPDATE_ERR_NEXT_HOP, build_attr(Attr)}};
+  {error, {?BGP_UPDATE_ERR_NEXT_HOP, rtm_attr:to_binary(Attr)}};
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_AS_PATH,
                               value     = Val}, LocalASN) ->
@@ -275,7 +275,7 @@ build_open(ASN, HoldTime, LocalAddr) ->
   list_to_binary([build_header(?BGP_TYPE_OPEN, Len), ?BGP_OPEN_PATTERN]).
 
 build_update(Attrs, NewPrefixes, Withdrawn) ->
-  PathAttrs = build_path_attrs(Attrs),
+  PathAttrs = rtm_attr:attrs_to_binary(Attrs),
   TotalPathAttrLength = size(PathAttrs),
   NLRI = build_prefixes(NewPrefixes),
   WithdrawnRoutes = build_prefixes(Withdrawn),
@@ -299,30 +299,11 @@ build_notification(ErrorCode) ->
 build_keepalive() ->
   build_header(?BGP_TYPE_KEEPALIVE, ?BGP_HEADER_LENGTH).
 
-build_path_attrs(Attrs) ->
-  AttrList =
-    dict:fold(fun(_Type, [#bgp_path_attr{extended = Ext} = Attr], Acc) ->
-      {Type, Len, Val} = build_attr(Attr),
-      L = (Ext + 1) * 8,
-      [<< Type:16,Len:L,Val:Len/binary >> | Acc]
-    end, [], Attrs),
-  list_to_binary(AttrList).
-
 build_prefixes(Prefixes) ->
   list_to_binary(lists:map(fun({Prefix, Len}) ->
     PadLen = octet_boundary_pad(Len),
     << Len:8, Prefix:Len, 0:PadLen >>
   end, Prefixes)).
-
-build_attr(#bgp_path_attr{optional   = Opt,
-                          transitive = Trans,
-                          partial    = Partial,
-                          extended   = Ext,
-                          type_code  = TypeCode,
-                          length     = Len,
-                          raw_value  = Val}) ->
-  <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
-  {Type, Len, Val}.
 
 octet_boundary_pad(Len) when Len > 24 -> 32 - Len;
 octet_boundary_pad(Len) when Len > 16 -> 24 - Len;
