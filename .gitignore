@@ -1,3 +1,6 @@
 .gitignore
 *.swp
 *.beam
+*.o
+ebin/*
+priv/*
