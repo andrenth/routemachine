@@ -37,10 +37,10 @@ parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
   Msg = #bgp_update{
     unfeasible_len   = UnfeasableLength,
     attrs_len        = TotalPathAttrLength,
-    withdrawn_routes = parse_withdrawn_routes(WithdrawnRoutes),
+    withdrawn_routes = parse_prefixes(WithdrawnRoutes),
     path_attrs       = Attrs,
     well_known_attrs = WellKnown,
-    nlri             = parse_nlri(NLRI)
+    nlri             = parse_prefixes(NLRI)
   },
   case rtm_msg:validate_update(Msg, Len, LocalASN) of
     ok    -> {ok, Msg};
@@ -74,15 +74,6 @@ parse_opt_params(?BGP_OPT_PARAMS_PATTERN, ParsedParams) ->
 
 % Helpers for UPDATE.
 
-parse_withdrawn_routes(WithdrawnRoutes) ->
-  parse_withdrawn_routes(WithdrawnRoutes, []).
-
-parse_withdrawn_routes(<<>>, Parsed) ->
-  Parsed;
-
-parse_withdrawn_routes(?BGP_WITHDRAWN_ROUTES_PATTERN, Parsed) ->
-  parse_withdrawn_routes(OtherWithdrawn, [WithdrawnPrefix | Parsed]).
-
 parse_path_attrs(Attrs) ->
   parse_path_attrs(Attrs, dict:new(), 0).
 
@@ -97,16 +88,15 @@ parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed, WellKnown) ->
      OtherPathAttrs/binary >> = AttrRest,
   Value = parse_attr_value(AttrTypeCode, AttrValue),
   Attr = #bgp_path_attr{
-           optional   = AttrOptional,
-           transitive = AttrTransitive,
-           partial    = AttrPartial,
-           extended   = AttrExtended,
-           type_code  = AttrTypeCode,
-           length     = AttrLength,
-           value      = Value,
-           raw_value  = AttrValue % XXX this is just to ease the creation
-                                  %     of NOTIFICATION messages.
-         },
+    optional   = AttrOptional,
+    transitive = AttrTransitive,
+    partial    = AttrPartial,
+    extended   = AttrExtended,
+    type_code  = AttrTypeCode,
+    length     = AttrLength,
+    value      = Value,
+    raw_value  = AttrValue % XXX this is just to ease the creation
+  },                       %     of NOTIFICATION messages.
   NewWellKnown = add_flag(WellKnown, AttrTypeCode),
   parse_path_attrs(OtherPathAttrs, dict:append(AttrTypeCode, Attr, Parsed),
                    NewWellKnown).
@@ -129,7 +119,7 @@ parse_attr_value(?BGP_PATH_ATTR_ORIGIN, <<Value:8>>) ->
   Value;
 
 parse_attr_value(?BGP_PATH_ATTR_AS_PATH, Paths) ->
-  parse_as_path(Paths, []);
+  parse_as_path(Paths);
 
 parse_attr_value(?BGP_PATH_ATTR_NEXT_HOP, <<NextHop:32>>) ->
   NextHop;
@@ -146,17 +136,16 @@ parse_attr_value(?BGP_PATH_ATTR_ATOMIC_AGGR, <<>>) ->
 parse_attr_value(?BGP_PATH_ATTR_AGGREGATOR, <<ASN:16, BGPId:32>>) ->
   {ASN, rtm_util:num_to_ip(BGPId)}.
 
-parse_as_path(<<>>, Parsed) ->
+parse_as_path(<<>>) ->
+  [];
+parse_as_path(?BGP_PATH_ATTR_AS_PATH_PATTERN) ->
+  [{PathType, PathASNs} | parse_as_path(OtherPaths)].
+
+parse_prefixes(Prefixes) ->
+  parse_prefixes(Prefixes, []).
+
+parse_prefixes(<<>>, Parsed) ->
   Parsed;
 
-parse_as_path(?BGP_PATH_ATTR_AS_PATH_PATTERN, Parsed) ->
-  parse_as_path(OtherPaths, [{PathType, PathASNs} | Parsed]).
-
-parse_nlri(NLRI) ->
-  parse_nlri(NLRI, []).
-
-parse_nlri(<<>>, Parsed) ->
-  Parsed;
-
-parse_nlri(?BGP_NLRI_PATTERN, Parsed) ->
-  parse_nlri(OtherRoutes, [ {RouteLength, RoutePrefix} | Parsed]).
+parse_prefixes(?BGP_PREFIX_PATTERN, Parsed) ->
+  parse_prefixes(OtherPrefixes, [{Prefix, PrefixLength} | Parsed]).

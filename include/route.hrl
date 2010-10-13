@@ -1,5 +1,9 @@
 -record(route, {
-  next_hop,
   active,
+  next_hop,
+  path_attrs,
+  ebgp,
+  bgp_id,
+  peer_addr,
   fsm
 }).

@@ -176,11 +176,6 @@
   << AuthCode : 8,
      AuthData/binary >>).
 
--define(BGP_WITHDRAWN_ROUTES_PATTERN,
-  << WithdrawnLength : 8,
-     WithdrawnPrefix : WithdrawnLength/binary,
-     OtherWithdrawn/binary >>).
-
 -define(BGP_PATH_ATTRS_PATTERN,
   << AttrOptional   : 1,
      AttrTransitive : 1,
@@ -197,7 +192,7 @@
      PathASNs   : PathLength/binary-unit:16,
      OtherPaths/binary >>).
 
--define(BGP_NLRI_PATTERN,
-  << RouteLength : 8,
-     RoutePrefix : RouteLength,
-     OtherRoutes/binary >>).
+-define(BGP_PREFIX_PATTERN,
+  << PrefixLength : 8,
+     Prefix       : PrefixLength,
+     OtherPrefixes/binary >>).

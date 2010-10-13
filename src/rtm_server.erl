@@ -115,7 +115,6 @@ process_header(#state{data = Data} = State)
 process_header(State) ->
   State.
 
-
 process_message(#state{data     = Data,
                        msg_type = Type,
                        msg_len  = Length,

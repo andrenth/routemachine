@@ -2,6 +2,7 @@
 -behaviour(gen_fsm).
 
 -include_lib("bgp.hrl").
+-include_lib("route.hrl").
 -include_lib("session.hrl").
 
 -export([start_link/1]).
@@ -123,12 +124,13 @@ active({open_received, Bin, Marker},
   error_logger:info_msg("FSM:active/open_received~n"),
   clear_timer(Session#session.conn_retry_timer),
   case rtm_parser:parse_open(Bin, Marker, PeerASN, PeerAddr) of
-    {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
+    {ok, #bgp_open{asn = ASN, bgp_id = BGPId, hold_time = HoldTime}} ->
       send_open(Session),
       send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
-      {next_state, open_confirm, NewSession#session{peer_asn = ASN}};
+      {next_state, open_confirm, NewSession#session{peer_asn    = ASN,
+                                                    peer_bgp_id = BGPId}};
     {error, Error} ->
       log_error(Error),
       send_notification(Session, Error),
@@ -161,11 +163,12 @@ open_sent({open_received, Bin, Marker},
           #session{peer_asn = PeerASN, peer_addr = PeerAddr} = Session) ->
   error_logger:info_msg("FSM:open_sent/open_received~n"),
   case rtm_parser:parse_open(Bin, Marker, PeerASN, PeerAddr) of
-    {ok, #bgp_open{asn = ASN, hold_time = HoldTime}} ->
+    {ok, #bgp_open{asn = ASN, bgp_id = BGPId, hold_time = HoldTime}} ->
       send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
-      {next_state, open_confirm, NewSession#session{peer_asn = ASN}};
+      {next_state, open_confirm, NewSession#session{peer_asn    = ASN,
+                                                    peer_bgp_id = BGPId}};
     {error, Error} ->
       log_error(Error),
       send_notification(Session, Error),
@@ -203,10 +206,11 @@ open_confirm(stop, Session) ->
   send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
-open_confirm(keepalive_received, Session) ->
+open_confirm(keepalive_received, #session{} = Session) ->
   error_logger:info_msg("FSM:open_confirm/keepalive_received~n"),
-  % Going into established, send our networks to the peer.
-  send_update(Session),
+  % Going into established; join the group send our networks to the peer.
+  join_established_group(Session),
+  distribute_local_routes(Session),
   {next_state, established, Session};
 
 open_confirm({timeout, _Ref, hold}, Session) ->
@@ -257,7 +261,7 @@ established({update_received, Bin, Len},
   NewSession = Session#session{hold_timer = Hold},
   case rtm_parser:parse_update(Bin, Len, LocalASN) of
     {ok, Msg} ->
-      rtm_rib:update(Msg, self()),
+      update_rib(Session, Msg),
       {next_state, established, NewSession};
     {error, Error} ->
       log_error(Error),
@@ -297,7 +301,7 @@ established(tcp_fatal, Session) ->
 established(_Event, Session) ->
   error_logger:info_msg("FSM:established/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
-  rtm_rib:remove(self()),
+  ok = rtm_rib:remove_prefixes(),
   {stop, normal, Session}.
 
 
@@ -368,7 +372,7 @@ connect_to_peer(#session{server     = undefined,
 
 close_connection(#session{server = Server} = Session) ->
   rtm_server:close_peer_connection(Server),
-  rtm_rib:remove(self()),
+  ok = rtm_rib:remove_prefixes(),
   Session#session{server = undefined}.
 
 release_resources(Session) ->
@@ -403,10 +407,128 @@ start_timers(Session, HoldTime) ->
 log_notification(Bin) ->
   {ok, #bgp_notification{error_string = Err}} =
     rtm_parser:parse_notification(Bin),
-  error_logger:info_msg(Err).
+  error_logger:info_msg("~s~n", [Err]).
 
 log_error({Code, SubCode, Data}) ->
   error_logger:error_msg(rtm_util:error_string(Code, SubCode, Data)).
+
+
+update_rib(#session{
+             peer_bgp_id = PeerBGPId,
+             peer_addr   = PeerAddr
+           } = Session,
+           #bgp_update{
+             path_attrs       = PathAttrs,
+             withdrawn_routes = Withdrawn,
+             nlri             = NLRI
+           }) ->
+  Route = #route{
+    active     = false,
+    next_hop   = attr_value(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
+    path_attrs = PathAttrs,
+    ebgp       = is_ebgp(Session),
+    bgp_id     = PeerBGPId,
+    peer_addr  = PeerAddr,
+    fsm        = self()
+  },
+  {Added, Deleted, Replacements} = rtm_rib:update(Route, NLRI, Withdrawn),
+  redistribute_routes(Session, PathAttrs, Added, Deleted, Replacements).
+
+redistribute_routes(Session, Attrs, Added, Deleted, Replacements) ->
+  Servers = case is_ebgp(Session) of
+    true  -> peers();
+    false -> ebgp_peers()
+  end,
+  send_updates(Session, Servers, Attrs, Added, Deleted, Replacements).
+
+distribute_local_routes(#session{local_addr = LocalAddr,
+                                 networks = Networks} = Session) ->
+  % 
+  PathAttrs = dict:from_list([
+    {?BGP_PATH_ATTR_ORIGIN,   [attr_origin(?BGP_ORIGIN_IGP)]},
+    {?BGP_PATH_ATTR_AS_PATH,  [attr_as_path(<<>>)]},
+    {?BGP_PATH_ATTR_NEXT_HOP, [attr_next_hop(LocalAddr)]}
+  ]),
+  send_updates(Session, peers(), PathAttrs, Networks, []).
+
+is_ebgp(#session{local_asn = LocalASN, peer_asn = PeerASN}) ->
+  LocalASN =/= PeerASN.
+
+join_established_group(#session{server = Server} = Session) ->
+  ok = pg2:join(established_group(Session), Server).
+
+established_group(Session) ->
+  case is_ebgp(Session) of
+    true  -> established_ebgp;
+    false -> established_ibgp
+  end.
+
+peers() ->
+  ebgp_peers() ++ ibgp_peers().
+
+ebgp_peers() ->
+  pg2:get_members(established_ebgp).
+
+ibgp_peers() ->
+  pg2:get_members(established_ibgp).
+
+prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
+                                type_code = ?BGP_PATH_ATTR_AS_PATH,
+                                raw_value = Path} = ASPath) ->
+  NewPath = case Path of
+    << ?BGP_AS_PATH_SEQUENCE:8, N:8, FirstASN:16, Rest/binary >> ->
+      << ?BGP_AS_PATH_SEQUENCE:8, (N+1):8, ASN:16, FirstASN:16, Rest/binary >>;
+    << ?BGP_AS_PATH_SET:8, _Rest/binary >> ->
+      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16, Path/binary >>;
+    << >> ->
+      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16 >>
+  end,
+  Length = size(NewPath),
+  ASPath#bgp_path_attr{
+    extended  = case Extended of 0 -> extended_bit(Length); 1 -> 1 end,
+    length    = Length,
+    raw_value = NewPath
+  }.
+
+attr_origin(Origin) ->
+  build_attr(?BGP_PATH_ATTR_ORIGIN, <<Origin:8>>, [transitive]).
+
+attr_as_path(Path) ->
+  build_attr(?BGP_PATH_ATTR_AS_PATH, Path, [transitive]).
+
+attr_next_hop(Addr) ->
+  Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
+  build_attr(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
+
+build_attr(TypeCode, Bin, Flags) ->
+  Length = size(Bin),
+  InitAttr = #bgp_path_attr{
+    optional   = 0,
+    transitive = 0,
+    partial    = 0,
+    extended   = extended_bit(Length),
+    type_code  = TypeCode,
+    length     = Length,
+    raw_value  = Bin
+  },
+  lists:foldl(fun(Flag, Acc) ->
+    case Flag of
+      optional   -> Acc#bgp_path_attr{optional   = 1};
+      transitive -> Acc#bgp_path_attr{transitive = 1};
+      partial    -> Acc#bgp_path_attr{partial    = 1};
+      extended   -> Acc#bgp_path_attr{extended   = 1}
+    end
+  end, InitAttr, Flags).
+
+attr_value(Attr, PathAttrs) ->
+  [#bgp_path_attr{value = Value}] = dict:fetch(Attr, PathAttrs),
+  Value.
+
+extended_bit(Length) ->
+  case Length > 255 of
+    true  -> 1;
+    false -> 0
+  end.
 
 % Message sending.
 
@@ -417,42 +539,21 @@ send_open(#session{server     = Server,
   Msg = rtm_msg:build_open(ASN, HoldTime, LocalAddr),
   send(Server, Msg).
 
-send_update(#session{server     = Server,
-                     local_asn  = LocalASN,
-                     local_addr = LocalAddr,
-                     networks   = Networks}) ->
-  PathAttrs = [
-    #bgp_path_attr{
-      optional   = 0,
-      transitive = 1,
-      partial    = 0,
-      extended   = 0,
-      type_code  = ?BGP_PATH_ATTR_ORIGIN,
-      length     = 1,
-      raw_value  = <<?BGP_ORIGIN_IGP>>
-    },
+send_updates(Session, Servers, Attrs, Added, Deleted) ->
+  send_updates(Session, Servers, Attrs, Added, Deleted, dict:new()).
 
-    #bgp_path_attr{
-      optional   = 0,
-      transitive = 1,
-      partial    = 0,
-      extended   = 0,
-      type_code  = ?BGP_PATH_ATTR_AS_PATH,
-      length     = 4,
-      raw_value  = <<?BGP_AS_PATH_SEQUENCE:8, 1:8, LocalASN:16>>
-    },
+send_updates(Session, Servers, Attrs, Added, Deleted, Replacements) ->
+  AttrsToSend = update_path_attrs(Session, Attrs),
+  lists:foreach(fun(Server) ->
+    send_update(Server, AttrsToSend, Added, Deleted),
+    dict:fold(fun(#route{path_attrs = ReplAttrs}, Prefixes, ok) ->
+      ReplAttrsToSend = update_path_attrs(Session, ReplAttrs),
+      send_update(Server, ReplAttrsToSend, Prefixes, [])
+    end, ok, Replacements)
+  end, Servers).
 
-    #bgp_path_attr{
-      optional   = 0,
-      transitive = 1,
-      partial    = 0,
-      extended   = 0,
-      type_code  = ?BGP_PATH_ATTR_NEXT_HOP,
-      length     = 4,
-      raw_value  = <<(rtm_util:ip_to_num(LocalAddr)):32>>
-    }
-  ],
-  Msg = rtm_msg:build_update(PathAttrs, Networks, []),
+send_update(Server, PathAttrs, Added, Deleted) ->
+  Msg = rtm_msg:build_update(PathAttrs, Added, Deleted),
   send(Server, Msg).
 
 send_notification(#session{server = Server}, Error) ->
@@ -463,3 +564,41 @@ send_keepalive(#session{server = Server}) ->
 
 send(Server, Bin) ->
   rtm_server:send_msg(Server, Bin).
+
+% ORIGIN: always keep
+% AS_PATH: update if propagating to external peer or when originating
+% NEXT_HOP: update if propagating to external peer
+% MED: propagate only to internal peers
+% LOCAL_PREF: propagate only to internal peers
+% ATOMIC_AGGREGATE: always propagate
+% TODO AGGREGATOR: propagate if doing aggregation
+update_path_attrs(#session{local_asn  = LocalASN,
+                           local_addr = LocalAddr} = Session,
+                  PathAttrs) ->
+  UpdateAttrs = case established_group(Session) of
+    established_ebgp ->
+      fun(TypeCode, [Attr], NewPathAttrs) ->
+        case TypeCode of
+          ?BGP_PATH_ATTR_AS_PATH ->
+            NewASPath = prepend_asn(LocalASN, Attr),
+            dict:store(?BGP_PATH_ATTR_AS_PATH, [NewASPath], NewPathAttrs);
+          ?BGP_PATH_ATTR_NEXT_HOP ->
+            NewNextHop = attr_next_hop(LocalAddr),
+            dict:store(?BGP_PATH_ATTR_NEXT_HOP, [NewNextHop], NewPathAttrs);
+          _ ->
+            NewPathAttrs
+        end
+      end;
+    established_ibgp ->
+      fun(TypeCode, [Attr], NewPathAttrs) ->
+        case TypeCode of
+          ?BGP_PATH_ATTR_MED ->
+            dict:store(?BGP_PATH_ATTR_MED, [Attr], NewPathAttrs);
+          ?BGP_PATH_ATTR_LOCAL_PREF ->
+            dict:store(?BGP_PATH_ATTR_LOCAL_PREF, [Attr], NewPathAttrs);
+          _ ->
+            NewPathAttrs
+        end
+      end
+  end,
+  dict:fold(UpdateAttrs, PathAttrs, PathAttrs).

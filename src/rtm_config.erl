@@ -37,7 +37,7 @@ build_session(Local, [Peer | Rest], Sessions) ->
     local_addr      = LocalAddr,
     peer_asn        = PeerAsn,
     peer_addr       = PeerAddr,
-    networks        = get_all(network, Local),
+    networks        = get_networks(Local),
     hold_time       = get(hold_time, Peer, ?BGP_TIMER_HOLD),
     keepalive_time  = get(keepalive_time, Peer, ?BGP_TIMER_KEEPALIVE),
     conn_retry_time = get(conn_retry_time, Peer, ?BGP_TIMER_CONN_RETRY),
@@ -45,3 +45,8 @@ build_session(Local, [Peer | Rest], Sessions) ->
     establishment   = get(establishment, Peer, active)
   },
   build_session(Local, Rest, [Session | Sessions]).
+
+get_networks(Local) ->
+  lists:map(fun({Net, Len}) ->
+    {rtm_util:ip_to_num(Net), Len}
+  end, get_all(network, Local)).

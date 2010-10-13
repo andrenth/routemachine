@@ -11,6 +11,9 @@ start_child(FSM) ->
   supervisor:start_child(?MODULE, [FSM]).
 
 init(ok) ->
+  % Process groups for sessions in the 'established' state.
+  pg2:create(established_ibgp),
+  pg2:create(established_ebgp),
   ServerSpec =
     {rtm_server,
       {rtm_server, start_link, []},

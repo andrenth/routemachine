@@ -5,6 +5,7 @@
   peer_asn,
   local_addr,
   peer_addr,
+  peer_bgp_id,
   networks,
   hold_time,
   hold_timer,

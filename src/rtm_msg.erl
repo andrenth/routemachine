@@ -123,8 +123,9 @@ validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
 
 validate_path_attrs(#bgp_update{path_attrs = PathAttrs}, LocalASN) ->
   try
-    dict:fold(fun(_Type, Attr, ok) -> validate_attr(Attr, LocalASN) end, ok,
-              PathAttrs)
+    dict:fold(fun(_Type, Attr, ok) ->
+      validate_attr(Attr, LocalASN)
+    end, ok, PathAttrs)
   catch
     throw:Error -> Error
   end.
@@ -299,15 +300,18 @@ build_keepalive() ->
   build_header(?BGP_TYPE_KEEPALIVE, ?BGP_HEADER_LENGTH).
 
 build_path_attrs(Attrs) ->
-  list_to_binary(lists:map(fun(#bgp_path_attr{extended = Ext} = Attr) ->
-    {Type, Len, Val} = build_attr(Attr),
-    L = (Ext + 1) * 8,
-    << Type:16,Len:L,Val:Len/binary >>
-  end, Attrs)).
+  AttrList =
+    dict:fold(fun(_Type, [#bgp_path_attr{extended = Ext} = Attr], Acc) ->
+      {Type, Len, Val} = build_attr(Attr),
+      L = (Ext + 1) * 8,
+      [<< Type:16,Len:L,Val:Len/binary >> | Acc]
+    end, [], Attrs),
+  list_to_binary(AttrList).
 
 build_prefixes(Prefixes) ->
   list_to_binary(lists:map(fun({Prefix, Len}) ->
-    << Len:8, (rtm_util:ip_to_num(Prefix)):32 >>
+    PadLen = octet_boundary_pad(Len),
+    << Len:8, Prefix:Len, 0:PadLen >>
   end, Prefixes)).
 
 build_attr(#bgp_path_attr{optional   = Opt,
@@ -319,3 +323,8 @@ build_attr(#bgp_path_attr{optional   = Opt,
                           raw_value  = Val}) ->
   <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
   {Type, Len, Val}.
+
+octet_boundary_pad(Len) when Len > 24 -> 32 - Len;
+octet_boundary_pad(Len) when Len > 16 -> 24 - Len;
+octet_boundary_pad(Len) when Len > 8  -> 16 - Len;
+octet_boundary_pad(Len)               ->  8 - Len.
