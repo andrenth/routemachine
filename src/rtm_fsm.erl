@@ -479,7 +479,7 @@ send_open(#session{server     = Server,
                    local_asn  = ASN,
                    hold_time  = HoldTime,
                    local_addr = LocalAddr}) ->
-  Msg = rtm_msg:build_open(ASN, HoldTime, LocalAddr),
+  Msg = rtm_msg:open(ASN, HoldTime, LocalAddr),
   send(Server, Msg).
 
 send_updates(Session, Servers, Attrs, Added, Deleted) ->
@@ -496,14 +496,14 @@ send_updates(Session, Servers, Attrs, Added, Deleted, Replacements) ->
   end, Servers).
 
 send_update(Server, PathAttrs, Added, Deleted) ->
-  Msg = rtm_msg:build_update(PathAttrs, Added, Deleted),
+  Msg = rtm_msg:update(PathAttrs, Added, Deleted),
   send(Server, Msg).
 
 send_notification(#session{server = Server}, Error) ->
-  send(Server, rtm_msg:build_notification(Error)).
+  send(Server, rtm_msg:notification(Error)).
 
 send_keepalive(#session{server = Server}) ->
-  send(Server, rtm_msg:build_keepalive()).
+  send(Server, rtm_msg:keepalive()).
 
 send(Server, Bin) ->
   rtm_server:send_msg(Server, Bin).

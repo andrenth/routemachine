@@ -13,7 +13,7 @@ parse_header(?BGP_HEADER_PATTERN) ->
     msg_len  = MessageLength,
     msg_type = MessageType
   },
-  case rtm_msg:validate_header(Hdr) of
+  case rtm_validate:header(Hdr) of
     ok    -> {ok, Hdr};
     Error -> Error
   end.
@@ -27,7 +27,7 @@ parse_open(?BGP_OPEN_PATTERN, Marker, ConfigASN, ConfigID) ->
     opt_params_len = OptParamsLen,
     opt_params     = parse_opt_params(OptParams)
   },
-  case rtm_msg:validate_open(Msg, Marker, ConfigASN, ConfigID) of
+  case rtm_validate:open(Msg, Marker, ConfigASN, ConfigID) of
     ok    -> {ok, Msg};
     Error -> Error
   end.
@@ -42,7 +42,7 @@ parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
     well_known_attrs = WellKnown,
     nlri             = parse_prefixes(NLRI)
   },
-  case rtm_msg:validate_update(Msg, Len, LocalASN) of
+  case rtm_validate:update(Msg, Len, LocalASN) of
     ok    -> {ok, Msg};
     Error -> Error
   end.

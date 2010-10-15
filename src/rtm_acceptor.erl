@@ -110,4 +110,4 @@ handle_collision(Socket, #session{peer_addr = PeerAddr} = Session, Pid) ->
   end.
 
 send_notification(Socket, Error) ->
-  gen_tcp:send(Socket, rtm_msg:build_notification(Error)).
+  gen_tcp:send(Socket, rtm_msg:notification(Error)).

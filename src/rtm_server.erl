@@ -138,4 +138,4 @@ receipt_event(Type, Bin, Len, Marker) ->
   end.
 
 send_notification(Error) ->
-  gen_server:cast(self(), {send_msg, rtm_msg:build_notification(Error)}).
+  gen_server:cast(self(), {send_msg, rtm_msg:notification(Error)}).
