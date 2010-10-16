@@ -37,6 +37,8 @@ build_session(Local, [Peer | Rest], Sessions) ->
     local_addr      = LocalAddr,
     peer_asn        = PeerAsn,
     peer_addr       = PeerAddr,
+    % TODO Make sure we have installed routes for the configured networks
+    % in the Loc-RIB, and add the proper entries in rtm_rib.
     networks        = get_networks(Local),
     hold_time       = get(hold_time, Peer, ?BGP_TIMER_HOLD),
     keepalive_time  = get(keepalive_time, Peer, ?BGP_TIMER_KEEPALIVE),

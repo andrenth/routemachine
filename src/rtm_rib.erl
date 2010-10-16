@@ -7,7 +7,7 @@
 -export([start_link/0]).
 
 % API.
--export([update/3, remove_prefixes/0]).
+-export([get/0, update/3, remove_prefixes/0]).
 
 % Exports for gen_server.
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3,
@@ -24,11 +24,14 @@ start_link() ->
 % API.
 %
 
+get() ->
+  gen_server:call(?MODULE, get).
+
 update(Route, NLRI, Withdrawn) ->
-  gen_server:call(rtm_rib, {update, Route, NLRI, Withdrawn}).
+  gen_server:call(?MODULE, {update, Route, NLRI, Withdrawn}).
 
 remove_prefixes() ->
-  gen_server:call(rtm_rib, remove_prefixes).
+  gen_server:call(?MODULE, remove_prefixes).
 
 %
 % Callbacks for gen_server.
@@ -40,6 +43,15 @@ init(ok) ->
   register(?MODULE, self()),
   {ok, #state{rib = dict:new()}}.
 
+handle_call(get, _From, #state{rib = RIB} = State) ->
+  Routes = dict:fold(fun({Prefix, Len}, Entries, Best) ->
+    case Entries of
+      [Route | _Rest] -> dict:append(Route, {Prefix, Len}, Best);
+      [] -> Best
+    end
+  end, dict:new(), RIB),
+  {reply, Routes, State};
+
 handle_call({update, Route, NLRI, Withdrawn}, {FSM, _Tag},
             #state{rib = RIB} = State) ->
   {Added, TmpRIB} = add_prefixes(RIB, Route, NLRI),
@@ -47,11 +59,13 @@ handle_call({update, Route, NLRI, Withdrawn}, {FSM, _Tag},
   {reply, {Added, Deleted, Replacements}, State#state{rib = NewRIB}};
 
 handle_call(remove_prefixes, {FSM, _Tag}, #state{rib = RIB} = State) ->
-  NewRIB = lists:foldl(fun({Pref, Len}, AccRIB) ->
-    {_Added, _Deleted, NewAccRIB} = del_prefixes(AccRIB, [{Pref, Len}], FSM),
-    NewAccRIB
-  end, RIB, dict:fetch_keys(RIB)),
-  {reply, ok, State#state{rib = NewRIB}}.
+  {Removed, NewRIB} = lists:foldl(fun({Pref, Len}, {AccRemoved, AccRIB}) ->
+    case del_prefixes(AccRIB, [{Pref, Len}], FSM) of
+      {[Deleted], _, NewAccRIB} -> {[Deleted | AccRemoved], NewAccRIB};
+      {[], _, NewAccRIB}        -> {AccRemoved, NewAccRIB}
+    end
+  end, {[], RIB}, dict:fetch_keys(RIB)),
+  {reply, Removed, State#state{rib = NewRIB}}.
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.

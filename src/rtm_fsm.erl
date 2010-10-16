@@ -208,9 +208,10 @@ open_confirm(stop, Session) ->
 
 open_confirm(keepalive_received, #session{} = Session) ->
   error_logger:info_msg("FSM:open_confirm/keepalive_received~n"),
-  % Going into established; join the group send our networks to the peer.
+  % Going into established; join the process group and send our
+  % installed routes to the peer.
   join_established_group(Session),
-  distribute_local_routes(Session),
+  distribute_installed_routes(Session),
   {next_state, established, Session};
 
 open_confirm({timeout, _Ref, hold}, Session) ->
@@ -301,7 +302,6 @@ established(tcp_fatal, Session) ->
 established(_Event, Session) ->
   error_logger:info_msg("FSM:established/other(~p)~n", [_Event]),
   send_notification(Session, ?BGP_ERR_FSM),
-  ok = rtm_rib:remove_prefixes(),
   {stop, normal, Session}.
 
 
@@ -372,11 +372,12 @@ connect_to_peer(#session{server     = undefined,
 
 close_connection(#session{server = Server} = Session) ->
   rtm_server:close_peer_connection(Server),
-  ok = rtm_rib:remove_prefixes(),
   Session#session{server = undefined}.
 
 release_resources(Session) ->
   NewSession = close_connection(Session),
+  Deleted = rtm_rib:remove_prefixes(),
+  send_updates(Session, peers(), dict:new(), [], Deleted),
   clear_timer(Session#session.conn_retry_timer),
   clear_timer(Session#session.hold_timer),
   clear_timer(Session#session.keepalive_timer),
@@ -412,16 +413,17 @@ log_notification(Bin) ->
 log_error({Code, SubCode, Data}) ->
   error_logger:error_msg(rtm_util:error_string(Code, SubCode, Data)).
 
+%
+% TODO Move the stuff below to a separate simple-one-for-one rtm_rdp
+% gen_server process so that the FSM doesn't need to block and the RIB
+% can be asynchronous.
+%
 
-update_rib(#session{
-             peer_bgp_id = PeerBGPId,
-             peer_addr   = PeerAddr
-           } = Session,
-           #bgp_update{
-             path_attrs       = PathAttrs,
-             withdrawn_routes = Withdrawn,
-             nlri             = NLRI
-           }) ->
+update_rib(#session{peer_bgp_id = PeerBGPId,
+                    peer_addr   = PeerAddr} = Session,
+           #bgp_update{path_attrs       = PathAttrs,
+                       withdrawn_routes = Withdrawn,
+                       nlri             = NLRI}) ->
   Route = #route{
     active     = false,
     next_hop   = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
@@ -434,22 +436,18 @@ update_rib(#session{
   {Added, Deleted, Replacements} = rtm_rib:update(Route, NLRI, Withdrawn),
   redistribute_routes(Session, PathAttrs, Added, Deleted, Replacements).
 
-redistribute_routes(Session, Attrs, Added, Deleted, Replacements) ->
-  Servers = case is_ebgp(Session) of
+redistribute_routes(#session{server = Originator} = Session, Attrs,
+                    Added, Deleted, Replacements) ->
+  AllServers = case is_ebgp(Session) of
     true  -> peers();
     false -> ebgp_peers()
   end,
-  send_updates(Session, Servers, Attrs, Added, Deleted, Replacements).
+  Servers = lists:filter(fun(Server) -> Server =/= Originator end, AllServers),
+  send_updates(Session, Servers, Attrs, Added, Deleted),
+  send_updates(Session, Servers, Replacements).
 
-distribute_local_routes(#session{local_addr = LocalAddr,
-                                 networks = Networks} = Session) ->
-  % 
-  PathAttrs = rtm_attr:from_list([
-    {?BGP_PATH_ATTR_ORIGIN,   rtm_attr:origin(?BGP_ORIGIN_IGP)},
-    {?BGP_PATH_ATTR_AS_PATH,  rtm_attr:as_path(<<>>)},
-    {?BGP_PATH_ATTR_NEXT_HOP, rtm_attr:next_hop(LocalAddr)}
-  ]),
-  send_updates(Session, peers(), PathAttrs, Networks, []).
+distribute_installed_routes(#session{server = Server} = Session) ->
+  send_updates(Session, [Server], rtm_rib:get()).
 
 is_ebgp(#session{local_asn = LocalASN, peer_asn = PeerASN}) ->
   LocalASN =/= PeerASN.
@@ -483,17 +481,18 @@ send_open(#session{server     = Server,
   send(Server, Msg).
 
 send_updates(Session, Servers, Attrs, Added, Deleted) ->
-  send_updates(Session, Servers, Attrs, Added, Deleted, dict:new()).
-
-send_updates(Session, Servers, Attrs, Added, Deleted, Replacements) ->
   AttrsToSend = update_path_attrs(Session, Attrs),
   lists:foreach(fun(Server) ->
-    send_update(Server, AttrsToSend, Added, Deleted),
-    dict:fold(fun(#route{path_attrs = ReplAttrs}, Prefixes, ok) ->
-      ReplAttrsToSend = update_path_attrs(Session, ReplAttrs),
-      send_update(Server, ReplAttrsToSend, Prefixes, [])
-    end, ok, Replacements)
+    send_update(Server, AttrsToSend, Added, Deleted)
   end, Servers).
+
+send_updates(Session, Servers, Routes) ->
+  dict:fold(fun(#route{path_attrs = Attrs}, Prefixes, ok) ->
+    AttrsToSend = update_path_attrs(Session, Attrs),
+    lists:foreach(fun(Server) ->
+      send_update(Server, AttrsToSend, Prefixes, [])
+    end, Servers)
+  end, ok, Routes).
 
 send_update(Server, PathAttrs, Added, Deleted) ->
   Msg = rtm_msg:update(PathAttrs, Added, Deleted),
