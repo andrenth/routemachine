@@ -234,20 +234,23 @@ check_well_known_flags(_Flags, []) ->
   ok;
 check_well_known_flags(Flags, [Type | Rest]) ->
   case check_flag(Flags, Type) of
-    0 -> {error, {?BGP_UPDATE_ERR_ATTR_MISSING}, <<Type:8>>};
-    _ -> check_well_known_flags(Flags, Rest)
+    false -> {error, {?BGP_UPDATE_ERR_ATTR_MISSING}, <<Type:8>>};
+    true  -> check_well_known_flags(Flags, Rest)
   end.
 
 check_flag(Flags, ?BGP_PATH_ATTR_ORIGIN) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_ORIGIN;
+  flag_is_set(?BGP_WELL_KNOWN_FLAG_ORIGIN, Flags);
 check_flag(Flags, ?BGP_PATH_ATTR_AS_PATH) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_AS_PATH;
+  flag_is_set(?BGP_WELL_KNOWN_FLAG_AS_PATH, Flags);
 check_flag(Flags, ?BGP_PATH_ATTR_NEXT_HOP) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_NEXT_HOP;
+  flag_is_set(?BGP_WELL_KNOWN_FLAG_NEXT_HOP, Flags);
 check_flag(Flags, ?BGP_PATH_ATTR_LOCAL_PREF) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_LOCAL_PREF;
+  flag_is_set(?BGP_WELL_KNOWN_FLAG_LOCAL_PREF, Flags);
 check_flag(Flags, ?BGP_PATH_ATTR_ATOMIC_AGGR) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR.
+  flag_is_set(?BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR, Flags).
+
+flag_is_set(Flag, Flags) ->
+  Flags band Flag =/= 0.
 
 validate(_Rec, _Code, []) ->
   ok;

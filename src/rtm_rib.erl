@@ -191,7 +191,8 @@ insert_route([#route{next_hop = NextHop} = Route | OtherRoutes],
       InactiveRoute = Route#route{active = false},
       {active, [ActiveRoute | [InactiveRoute | OtherRoutes]]};
     lt ->
-      NewOtherRoutes = insert_route(OtherRoutes, Prefix, Len, NewRoute, false),
+      {inactive, NewOtherRoutes} = insert_route(OtherRoutes, Prefix, Len,
+                                                NewRoute, false),
       {inactive, [Route | NewOtherRoutes]}
   end.
 
