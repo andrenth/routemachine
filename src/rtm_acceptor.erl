@@ -7,14 +7,12 @@
 -export([start_link/2]).
 
 % Exports for gen_server.
-%-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-%         terminate/2, code_change/3]).
 -export([init/1, handle_info/2, terminate/2, code_change/3, handle_call/3,
          handle_cast/2]).
 
 -record(state, {
-  listen_socket,
-  peers
+  listen_socket :: port(),
+  peers         :: dict()
 }).
 
 
@@ -41,7 +39,8 @@ handle_info(timeout, #state{listen_socket = ListenSocket,
         NewSession = start_fsm(Socket, Session),
         State#state{peers = dict:store(PeerAddr, NewSession, Peers)};
       error ->
-        error_logger:warn_msg("Connect attempt from bad peer ~p~n", [PeerAddr]),
+        error_logger:warning_msg("Connect attempt from bad peer ~p~n",
+          [PeerAddr]),
         gen_tcp:close(Socket),
         State
     end,
