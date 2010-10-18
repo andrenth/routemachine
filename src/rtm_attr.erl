@@ -1,15 +1,23 @@
 -module(rtm_attr).
--export([get/2, fold/3, from_list/1]).
+-export([get/2, fold/3]).
 -export([attrs_to_binary/1, to_binary/1]).
--export([origin/1, as_path/1, next_hop/1]).
 -export([update_for_ebgp/5, update_for_ibgp/3]).
 
 -include_lib("bgp.hrl").
 
+-spec(get(bgp_path_attr_type_code(), bgp_path_attrs()) -> any()).
 get(Attr, PathAttrs) ->
   [#bgp_path_attr{value = Value}] = dict:fetch(Attr, PathAttrs),
   Value.
 
+-spec(fold(fun((bgp_path_attr_type_code(), bgp_path_attr(), any()) -> any()),
+           any(), bgp_path_attrs()) -> any()).
+fold(Fun, Init, Attrs) ->
+  dict:fold(fun(TypeCode, [Attr], Acc) ->
+    Fun(TypeCode, Attr, Acc)
+  end, Init, Attrs).
+
+-spec(attrs_to_binary(bgp_path_attrs()) -> binary()).
 attrs_to_binary(Attrs) ->
   AttrList =
     dict:fold(fun(_Type, [#bgp_path_attr{extended = Ext} = Attr], Acc) ->
@@ -19,6 +27,8 @@ attrs_to_binary(Attrs) ->
     end, [], Attrs),
   list_to_binary(AttrList).
 
+-spec(to_binary(bgp_path_attr()) ->
+        {bgp_path_attr_type_code(), uint16(), binary()}).
 to_binary(#bgp_path_attr{optional   = Opt,
                          transitive = Trans,
                          partial    = Partial,
@@ -29,46 +39,26 @@ to_binary(#bgp_path_attr{optional   = Opt,
   <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
   {Type, Len, Val}.
 
-prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
-                                type_code = ?BGP_PATH_ATTR_AS_PATH,
-                                raw_value = Path} = ASPath) ->
-  NewPath = case Path of
-    << ?BGP_AS_PATH_SEQUENCE:8, N:8, FirstASN:16, Rest/binary >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, (N+1):8, ASN:16, FirstASN:16, Rest/binary >>;
-    << ?BGP_AS_PATH_SET:8, _Rest/binary >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16, Path/binary >>;
-    << >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16 >>
-  end,
-  Length = size(NewPath),
-  ASPath#bgp_path_attr{
-    extended  = case Extended of 0 -> extended_bit(Length); 1 -> 1 end,
-    length    = Length,
-    raw_value = NewPath
-  }.
-
-origin(Origin) ->
-  build(?BGP_PATH_ATTR_ORIGIN, <<Origin:8>>, [transitive]).
-
-as_path(Path) ->
-  build(?BGP_PATH_ATTR_AS_PATH, Path, [transitive]).
-
-next_hop(Addr) ->
-  Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
-  build(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
-
+-spec(update_for_ebgp(bgp_path_attr_type_code(),
+                      bgp_path_attr(),
+                      bgp_path_attrs(),
+                      uint16(),
+                      ipv4_address()) -> bgp_path_attrs()).
 update_for_ebgp(TypeCode, Attr, PathAttrs, ASN, Addr) ->
   case TypeCode of
     ?BGP_PATH_ATTR_AS_PATH ->
       NewASPath = prepend_asn(ASN, Attr),
       dict:store(?BGP_PATH_ATTR_AS_PATH, [NewASPath], PathAttrs);
     ?BGP_PATH_ATTR_NEXT_HOP ->
-      NewNextHop = rtm_attr:next_hop(Addr),
+      NewNextHop = next_hop(Addr),
       dict:store(?BGP_PATH_ATTR_NEXT_HOP, [NewNextHop], PathAttrs);
     _ ->
       PathAttrs
   end.
 
+-spec(update_for_ibgp(bgp_path_attr_type_code(),
+                      bgp_path_attr(),
+                      bgp_path_attrs()) -> bgp_path_attrs()).
 update_for_ibgp(TypeCode, Attr, PathAttrs) ->
   case TypeCode of
     ?BGP_PATH_ATTR_MED ->
@@ -99,21 +89,30 @@ build(TypeCode, Bin, Flags) ->
     end
   end, InitAttr, Flags).
 
+next_hop(Addr) ->
+  Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
+  build(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
+
 extended_bit(Length) ->
   case Length > 255 of
     true  -> 1;
     false -> 0
   end.
 
-fold(Fun, Init, Attrs) ->
-  dict:fold(fun(TypeCode, [Attr], Acc) ->
-    Fun(TypeCode, Attr, Acc)
-  end, Init, Attrs).
-
-from_list(Attrs) ->
-  from_list(Attrs, dict:new()).
-
-from_list([], Attrs) ->
-  Attrs;
-from_list([{TypeCode, Attr}| Rest], Attrs) ->
-  from_list(Rest, dict:store(TypeCode, [Attr], Attrs)).
+prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
+                                type_code = ?BGP_PATH_ATTR_AS_PATH,
+                                raw_value = Path} = ASPath) ->
+  NewPath = case Path of
+    << ?BGP_AS_PATH_SEQUENCE:8, N:8, FirstASN:16, Rest/binary >> ->
+      << ?BGP_AS_PATH_SEQUENCE:8, (N+1):8, ASN:16, FirstASN:16, Rest/binary >>;
+    << ?BGP_AS_PATH_SET:8, _Rest/binary >> ->
+      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16, Path/binary >>;
+    << >> ->
+      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16 >>
+  end,
+  Length = size(NewPath),
+  ASPath#bgp_path_attr{
+    extended  = case Extended of 0 -> extended_bit(Length); 1 -> 1 end,
+    length    = Length,
+    raw_value = NewPath
+  }.

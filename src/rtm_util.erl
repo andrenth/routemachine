@@ -3,9 +3,11 @@
 
 -export([ip_to_num/1, num_to_ip/1, error_string/3]).
 
+-spec(ip_to_num(ipv4_address()) -> uint32()).
 ip_to_num({B1, B2, B3, B4}) ->
   (B1 bsl 24) bor (B2 bsl 16) bor (B3 bsl 8) bor B4.
 
+-spec(num_to_ip(uint32()) -> ipv4_address()).
 num_to_ip(Num) ->
   B1 = (Num band 16#ff000000) bsr 24,
   B2 = (Num band 16#00ff0000) bsr 16,
@@ -13,24 +15,19 @@ num_to_ip(Num) ->
   B4 = (Num band 16#000000ff),
   {B1, B2, B3, B4}.
 
+-spec(error_string(bgp_error_code(), byte(), binary()) -> string()).
 error_string(?BGP_ERR_HEADER, SubCode, Data) ->
   "Header error: " ++ header_error(SubCode, Data);
-
 error_string(?BGP_ERR_OPEN, SubCode, Data) ->
   "OPEN message error: " ++ open_error(SubCode, Data);
-
 error_string(?BGP_ERR_UPDATE, SubCode, Data) ->
   "UPDATE message error: " ++ update_error(SubCode, Data);
-
 error_string(?BGP_ERR_HOLD_TIME, _SubCode, <<>>) ->
   "Hold timer expired";
-
 error_string(?BGP_ERR_FSM, _SubCode, <<>>) ->
   "Finite State Machine error";
-
 error_string(?BGP_ERR_CEASE, _SubCode, <<>>) ->
   "Cease";
-
 error_string(Code, SubCode, Data) ->
   io_lib:format("Unknown error: ~B/~B/~w",
                 [Code, SubCode, Data]).

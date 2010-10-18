@@ -11,8 +11,8 @@
          handle_cast/2]).
 
 -record(state, {
-  listen_socket :: port(),
-  peers         :: dict()
+  listen_socket,
+  peers
 }).
 
 

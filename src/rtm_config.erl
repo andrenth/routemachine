@@ -4,18 +4,25 @@
 -include_lib("bgp.hrl").
 -include_lib("session.hrl").
 
+-type(conf()    :: [term()]).
+-type(session() :: #session{}).
+
+-spec(parse(file:name()) -> conf()).
 parse(File) ->
   {ok, Conf} = file:consult(File),
   Conf.
 
+-spec(peers(conf()) -> [session()]).
 peers(Conf) ->
   {local, Local} = get(local, Conf),
   Peers = get_all(peer, Conf),
   build_session(Local, Peers).
 
+-spec(get(atom(), conf()) -> none | tuple()).
 get(Key, Conf) ->
   proplists:lookup(Key, Conf).
 
+-spec(get(atom(), conf(), term()) -> term()).
 get(Key, Conf, Default) ->
   proplists:get_value(Key, Conf, Default).
 

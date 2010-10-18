@@ -91,44 +91,44 @@
 %
 
 -record(bgp_header, {
-  marker,
-  msg_len,
-  msg_type
+  marker   :: non_neg_integer(),
+  msg_len  :: bgp_msg_len(),
+  msg_type :: bgp_msg_type()
 }).
 
 -record(bgp_open, {
-  version,
-  asn,
-  hold_time,
-  bgp_id,
-  opt_params_len,
-  opt_params
+  version        :: byte(),
+  asn            :: uint16(),
+  hold_time      :: uint16(),
+  bgp_id         :: ipv4_address(),
+  opt_params_len :: byte(),
+  opt_params     :: [bgp_opt_param()]
 }).
 
 -record(bgp_opt_param, {
-  type,
-  length,
-  value
+  type    :: byte(),
+  length  :: byte(),
+  value   :: binary()
 }).
 
 -record(bgp_update,{
-    unfeasible_len,
-    attrs_len,
-    withdrawn_routes,
-    path_attrs,
-    well_known_attrs,
-    nlri
+  unfeasible_len   :: uint16(),
+  attrs_len        :: uint16(),
+  withdrawn_routes :: prefix_list(),
+  path_attrs       :: bgp_path_attrs(),
+  well_known_attrs :: uint16(),
+  nlri             :: prefix_list()
 }).
 
 -record(bgp_path_attr, {
-  optional,
-  transitive,
-  partial,
-  extended,
-  type_code,
-  length,
-  value,
-  raw_value
+  optional   :: bit(),
+  transitive :: bit(),
+  partial    :: bit(),
+  extended   :: bit(),
+  type_code  :: bgp_path_attr_type_code(),
+  length     :: uint16(),
+  value      :: any(),
+  raw_value  :: binary()
 }).
 
 -record(bgp_notification, {
@@ -196,3 +196,35 @@
   << PrefixLength : 8,
      Prefix       : PrefixLength,
      OtherPrefixes/binary >>).
+
+%
+% Types.
+%
+
+-type(bit()          :: 0 | 1).
+-type(uint16()       :: 0..65535).
+-type(uint32()       :: 0..4294967295).
+-type(ipv4_address() :: {byte(), byte(), byte(), byte()}).
+-type(prefix_list()  :: [{uint32(), 0..32}]).
+
+-type(bgp_msg_type() :: ?BGP_TYPE_OPEN..?BGP_TIMER_KEEPALIVE).
+-type(bgp_msg_len()  :: ?BGP_HEADER_LENGTH..?BGP_MAX_MSG_LEN).
+
+-type(bgp_header()       :: #bgp_header{}).
+-type(bgp_open()         :: #bgp_open{}).
+-type(bgp_update()       :: #bgp_update{}).
+-type(bgp_notification() :: #bgp_notification{}).
+
+-type(bgp_opt_param() :: #bgp_opt_param{}).
+
+-type(bgp_path_attr_type_code() ::
+      ?BGP_PATH_ATTR_ORIGIN..?BGP_PATH_ATTR_AGGREGATOR).
+-type(bgp_path_attr() :: #bgp_path_attr{}).
+-type(bgp_path_attrs() :: dict()).
+
+-type(bgp_origin() :: 0..2).
+
+-type(bgp_error_code() :: ?BGP_ERR_HEADER..?BGP_ERR_CEASE).
+-type(bgp_error()      :: {bgp_error_code(), byte(), binary()}
+                        | {bgp_error_code(), byte()}
+                        | bgp_error_code()).

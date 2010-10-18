@@ -7,6 +7,7 @@
 % Parser functions.
 %
 
+-spec(parse_header(binary()) -> {ok, bgp_header()} | {error, bgp_error()}).
 parse_header(?BGP_HEADER_PATTERN) ->
   Hdr = #bgp_header{
     marker   = Marker,
@@ -18,6 +19,8 @@ parse_header(?BGP_HEADER_PATTERN) ->
     Error -> Error
   end.
 
+-spec(parse_open(binary(), non_neg_integer(), uint16(), ipv4_address()) ->
+        {ok, bgp_open()} | {error, bgp_error()}).
 parse_open(?BGP_OPEN_PATTERN, Marker, ConfigASN, ConfigID) ->
   Msg = #bgp_open{
     version        = Version,
@@ -32,6 +35,8 @@ parse_open(?BGP_OPEN_PATTERN, Marker, ConfigASN, ConfigID) ->
     Error -> Error
   end.
 
+-spec(parse_update(binary(), uint16(), uint16()) -> {ok, bgp_update()}
+                                                  | {error, bgp_error()}).
 parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
   {Attrs, WellKnown} = parse_path_attrs(PathAttrs),
   Msg = #bgp_update{
@@ -47,6 +52,7 @@ parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
     Error -> Error
   end.
 
+-spec(parse_notification(binary()) -> {ok, bgp_notification()}).
 parse_notification(?BGP_NOTIFICATION_PATTERN) ->
   ErrorString = rtm_util:error_string(ErrorCode, ErrorSubCode, ErrorData),
   Msg = #bgp_notification{error_string = ErrorString},
