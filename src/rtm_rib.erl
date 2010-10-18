@@ -113,7 +113,7 @@ remove_entry({Prefix, Len}, RIB, FSM) ->
         true ->
           case add_next_best(Prefix, Len, Remaining) of
             not_found   ->
-              {unfeasible, {Prefix, Len}, NewRIB};
+              {unfeasible, {Prefix, Len}, dict:erase({Prefix, Len}, NewRIB)};
             {ok, Route} ->
               {replaced, Route, NewRIB}
           end;
