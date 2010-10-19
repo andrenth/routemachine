@@ -6,22 +6,22 @@
 
 -type(conf() :: [term()]).
 
--spec(parse(file:name()) -> conf()).
+-spec parse(file:name()) -> conf().
 parse(File) ->
   {ok, Conf} = file:consult(File),
   Conf.
 
--spec(peers(conf()) -> [session()]).
+-spec peers(conf()) -> [session()].
 peers(Conf) ->
   {local, Local} = get(local, Conf),
   Peers = get_all(peer, Conf),
   build_session(Local, Peers).
 
--spec(get(atom(), conf()) -> none | tuple()).
+-spec get(atom(), conf()) -> none | tuple().
 get(Key, Conf) ->
   proplists:lookup(Key, Conf).
 
--spec(get(atom(), conf(), term()) -> term()).
+-spec get(atom(), conf(), term()) -> term().
 get(Key, Conf, Default) ->
   proplists:get_value(Key, Conf, Default).
 

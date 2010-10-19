@@ -4,15 +4,15 @@
 
 -export([header/1, open/4, update/3]).
 
--spec(header(bgp_header()) -> ok | {error, bgp_error()}).
+-spec header(bgp_header()) -> ok | {error, bgp_error()}.
 header(Hdr) ->
   validate(Hdr, ?BGP_ERR_HEADER,
            [fun validate_marker/1,
             fun validate_msg_len/1,
             fun validate_type/1]).
 
--spec(open(bgp_open(), non_neg_integer(), uint16(), ipv4_address()) ->
-               ok | {error, bgp_error()}).
+-spec open(bgp_open(), non_neg_integer(), uint16(), ipv4_address()) ->
+               ok | {error, bgp_error()}.
 open(Msg, Marker, ConfigASN, ConfigID) ->
   validate(Msg, ?BGP_ERR_OPEN,
            [fun validate_version/1,
@@ -21,8 +21,7 @@ open(Msg, Marker, ConfigASN, ConfigID) ->
             fun(M) -> validate_bgp_id(M, ConfigID) end,
             fun(M) -> validate_opt_params(M, Marker) end]).
 
--spec(update(bgp_update(), bgp_msg_len(), uint16()) -> ok
-                                                     | {error, bgp_error()}).
+-spec update(bgp_update(), bgp_msg_len(), uint16()) -> ok | {error,bgp_error()}.
 update(Msg, MsgLen, LocalASN) ->
   validate(Msg, ?BGP_ERR_UPDATE,
            [fun(M) -> validate_update_length(M, MsgLen) end,

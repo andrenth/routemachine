@@ -206,26 +206,26 @@
 % Types.
 %
 
--type(bgp_msg_type() :: ?BGP_TYPE_OPEN..?BGP_TIMER_KEEPALIVE).
--type(bgp_msg_len()  :: ?BGP_HEADER_LENGTH..?BGP_MAX_MSG_LEN).
+-type bgp_msg_type()     :: ?BGP_TYPE_OPEN..?BGP_TIMER_KEEPALIVE.
+-type bgp_msg_len()      :: ?BGP_HEADER_LENGTH..?BGP_MAX_MSG_LEN.
 
--type(bgp_header()       :: #bgp_header{}).
--type(bgp_open()         :: #bgp_open{}).
--type(bgp_update()       :: #bgp_update{}).
--type(bgp_notification() :: #bgp_notification{}).
+-type bgp_header()       :: #bgp_header{}.
+-type bgp_open()         :: #bgp_open{}.
+-type bgp_update()       :: #bgp_update{}.
+-type bgp_notification() :: #bgp_notification{}.
 
--type(bgp_opt_param() :: #bgp_opt_param{}).
+-type bgp_opt_param()    :: #bgp_opt_param{}.
 
--type(bgp_path_attr_type_code() ::
-      ?BGP_PATH_ATTR_ORIGIN..?BGP_PATH_ATTR_AGGREGATOR).
--type(bgp_path_attr() :: #bgp_path_attr{}).
--type(bgp_path_attrs() :: dict()).
+-type bgp_path_attr()    :: #bgp_path_attr{}.
+-type bgp_path_attrs()   :: dict().
+-type bgp_path_attr_type_code() ::
+        ?BGP_PATH_ATTR_ORIGIN..?BGP_PATH_ATTR_AGGREGATOR.
 
--type(bgp_origin() :: 0..2).
+-type bgp_origin()       :: ?BGP_ORIGIN_IGP..?BGP_ORIGIN_INCOMPLETE.
 
--type(bgp_error_code() :: ?BGP_ERR_HEADER..?BGP_ERR_CEASE).
--type(bgp_error()      :: {bgp_error_code(), byte(), binary()}
-                        | {bgp_error_code(), byte()}
-                        | bgp_error_code()).
+-type bgp_error_code()   :: ?BGP_ERR_HEADER..?BGP_ERR_CEASE.
+-type bgp_error()        :: {bgp_error_code(), byte(), binary()}
+                          | {bgp_error_code(), byte()}
+                          | bgp_error_code().
 
 -endif.

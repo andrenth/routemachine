@@ -5,19 +5,19 @@
 
 -include_lib("bgp.hrl").
 
--spec(get(bgp_path_attr_type_code(), bgp_path_attrs()) -> any()).
+-spec get(bgp_path_attr_type_code(), bgp_path_attrs()) -> any().
 get(Attr, PathAttrs) ->
   [#bgp_path_attr{value = Value}] = dict:fetch(Attr, PathAttrs),
   Value.
 
--spec(fold(fun((bgp_path_attr_type_code(), bgp_path_attr(), any()) -> any()),
-           any(), bgp_path_attrs()) -> any()).
+-spec fold(fun((bgp_path_attr_type_code(), bgp_path_attr(), any()) -> any()),
+           any(), bgp_path_attrs()) -> any().
 fold(Fun, Init, Attrs) ->
   dict:fold(fun(TypeCode, [Attr], Acc) ->
     Fun(TypeCode, Attr, Acc)
   end, Init, Attrs).
 
--spec(attrs_to_binary(bgp_path_attrs()) -> binary()).
+-spec attrs_to_binary(bgp_path_attrs()) -> binary().
 attrs_to_binary(Attrs) ->
   AttrList =
     dict:fold(fun(_Type, [#bgp_path_attr{extended = Ext} = Attr], Acc) ->
@@ -27,8 +27,8 @@ attrs_to_binary(Attrs) ->
     end, [], Attrs),
   list_to_binary(AttrList).
 
--spec(to_binary(bgp_path_attr()) ->
-        {bgp_path_attr_type_code(), uint16(), binary()}).
+-spec to_binary(bgp_path_attr()) ->
+        {bgp_path_attr_type_code(), uint16(), binary()}.
 to_binary(#bgp_path_attr{optional   = Opt,
                          transitive = Trans,
                          partial    = Partial,
@@ -39,11 +39,9 @@ to_binary(#bgp_path_attr{optional   = Opt,
   <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
   {Type, Len, Val}.
 
--spec(update_for_ebgp(bgp_path_attr_type_code(),
-                      bgp_path_attr(),
-                      bgp_path_attrs(),
-                      uint16(),
-                      ipv4_address()) -> bgp_path_attrs()).
+-spec update_for_ebgp(bgp_path_attr_type_code(), bgp_path_attr(),
+                      bgp_path_attrs(), uint16(), ipv4_address()) ->
+        bgp_path_attrs().
 update_for_ebgp(TypeCode, Attr, PathAttrs, ASN, Addr) ->
   case TypeCode of
     ?BGP_PATH_ATTR_AS_PATH ->
@@ -56,9 +54,8 @@ update_for_ebgp(TypeCode, Attr, PathAttrs, ASN, Addr) ->
       PathAttrs
   end.
 
--spec(update_for_ibgp(bgp_path_attr_type_code(),
-                      bgp_path_attr(),
-                      bgp_path_attrs()) -> bgp_path_attrs()).
+-spec update_for_ibgp(bgp_path_attr_type_code(), bgp_path_attr(),
+                      bgp_path_attrs()) -> bgp_path_attrs().
 update_for_ibgp(TypeCode, Attr, PathAttrs) ->
   case TypeCode of
     ?BGP_PATH_ATTR_MED ->
