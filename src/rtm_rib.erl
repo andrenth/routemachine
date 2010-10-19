@@ -269,7 +269,7 @@ local_pref(Route1, Route2) ->
 as_path_len(Route1, Route2) ->
   ASPath1 = attr_value(?BGP_PATH_ATTR_AS_PATH, Route1),
   ASPath2 = attr_value(?BGP_PATH_ATTR_AS_PATH, Route2),
-  size(ASPath2) - size(ASPath1).
+  byte_size(ASPath2) - byte_size(ASPath1).
 
 origin(Route1, Route2) ->
   sub_attrs(?BGP_PATH_ATTR_ORIGIN, Route2, Route1).

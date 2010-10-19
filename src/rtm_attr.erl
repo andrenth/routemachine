@@ -75,7 +75,7 @@ update_for_ibgp(TypeCode, Attr, PathAttrs) ->
   end.
 
 build(TypeCode, Bin, Flags) ->
-  Length = size(Bin),
+  Length = byte_size(Bin),
   InitAttr = #bgp_path_attr{
     optional   = false,
     transitive = false,
@@ -109,7 +109,7 @@ prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
     << >> ->
       << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16 >>
   end,
-  Length = size(NewPath),
+  Length = byte_size(NewPath),
   ASPath#bgp_path_attr{
     extended  = Extended orelse is_extended(Length),
     length    = Length,

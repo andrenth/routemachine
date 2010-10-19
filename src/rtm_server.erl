@@ -100,7 +100,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec process_header(state()) -> state().
 
 process_header(#state{data = Data} = State)
-               when bit_size(Data) >= ?BGP_HEADER_LENGTH * 8 ->
+               when byte_size(Data) >= ?BGP_HEADER_LENGTH ->
   {Bin, Rest} = split_binary(Data, ?BGP_HEADER_LENGTH),
   NewState = State#state{data = Rest,
                          data_proc = fun process_message/1},
@@ -123,12 +123,12 @@ process_header(State) ->
 
 process_message(#state{data     = Data,
                        msg_type = Type,
-                       msg_len  = Length,
+                       msg_len  = Len,
                        marker   = Marker,
-                       fsm      = FSM} = State) when size(Data) >= Length ->
-  {Bin, Rest} = split_binary(Data, Length),
+                       fsm      = FSM} = State) when byte_size(Data) >= Len ->
+  {Bin, Rest} = split_binary(Data, Len),
   NewState = State#state{data = Rest, data_proc = fun process_header/1},
-  Event = receipt_event(Type, Bin, Length, Marker),
+  Event = receipt_event(Type, Bin, Len, Marker),
   rtm_fsm:trigger(FSM, Event),
   process_header(NewState);
 

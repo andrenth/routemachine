@@ -20,18 +20,18 @@ open(ASN, HoldTime, LocalAddr) ->
 -spec update(bgp_path_attrs(), prefix_list(), prefix_list()) -> binary().
 update(Attrs, NewPrefixes, Withdrawn) ->
   PathAttrs = rtm_attr:attrs_to_binary(Attrs),
-  TotalPathAttrLength = size(PathAttrs),
+  TotalPathAttrLength = byte_size(PathAttrs),
   NLRI = build_prefixes(NewPrefixes),
   WithdrawnRoutes = build_prefixes(Withdrawn),
-  UnfeasableLength = size(WithdrawnRoutes),
+  UnfeasableLength = byte_size(WithdrawnRoutes),
   Len = ?BGP_UPDATE_MIN_LENGTH + TotalPathAttrLength + UnfeasableLength
-      + size(NLRI),
+      + byte_size(NLRI),
   list_to_binary([header(?BGP_TYPE_UPDATE, Len), ?BGP_UPDATE_PATTERN]).
 
 -spec notification(bgp_error()) -> binary().
 notification({ErrorCode, ErrorSubCode, ErrorData}) ->
   Msg = ?BGP_NOTIFICATION_PATTERN,
-  Len = ?BGP_HEADER_LENGTH + size(Msg),
+  Len = ?BGP_HEADER_LENGTH + byte_size(Msg),
   list_to_binary([header(?BGP_TYPE_NOTIFICATION, Len),
                   ?BGP_NOTIFICATION_PATTERN]);
 notification({ErrorCode, ErrorSubCode}) ->
