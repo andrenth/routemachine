@@ -1,3 +1,5 @@
+-include_lib("types.hrl").
+
 -record(session, {
   establishment,
   server,

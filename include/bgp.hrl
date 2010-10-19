@@ -1,3 +1,8 @@
+-ifndef(BGP_HRL).
+-define(BGP_HRL, true).
+
+-include_lib("types.hrl").
+
 -define(BGP_PORT, 179).
 
 % Lengths.
@@ -201,14 +206,6 @@
 % Types.
 %
 
--type(bit()          :: 0 | 1).
--type(uint16()       :: 0..65535).
--type(uint32()       :: 0..4294967295).
--type(ipv4_address() :: {byte(), byte(), byte(), byte()}).
--type(prefix()       :: uint32()).
--type(prefix_len()   :: 0..32).
--type(prefix_list()  :: [{prefix(), prefix_len()}]).
-
 -type(bgp_msg_type() :: ?BGP_TYPE_OPEN..?BGP_TIMER_KEEPALIVE).
 -type(bgp_msg_len()  :: ?BGP_HEADER_LENGTH..?BGP_MAX_MSG_LEN).
 
@@ -230,3 +227,5 @@
 -type(bgp_error()      :: {bgp_error_code(), byte(), binary()}
                         | {bgp_error_code(), byte()}
                         | bgp_error_code()).
+
+-endif.
