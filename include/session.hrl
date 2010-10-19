@@ -15,3 +15,5 @@
   conn_retry_timer,
   idle_time
 }).
+
+-type session() :: #session{}.

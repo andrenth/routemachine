@@ -4,8 +4,7 @@
 -include_lib("bgp.hrl").
 -include_lib("session.hrl").
 
--type(conf()    :: [term()]).
--type(session() :: #session{}).
+-type(conf() :: [term()]).
 
 -spec(parse(file:name()) -> conf()).
 parse(File) ->

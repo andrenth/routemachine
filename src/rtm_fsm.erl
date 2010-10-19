@@ -19,6 +19,22 @@
 -export([terminate/3, code_change/4, handle_event/3, handle_sync_event/4,
          handle_info/3]).
 
+-type event() :: start
+               | stop
+               | tcp_open
+               | tcp_closed
+               | tcp_open_failed
+               | tcp_fatal
+               | {timeout, reference(), conn_retry
+                                      | hold
+                                      | keepalive}
+               | open_received
+               | keepalive_received
+               | update_received
+               | notification_received.
+
+-type next_state(State) :: {next_state, State, session()}.
+
 start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
 
@@ -47,6 +63,8 @@ state(FSM) ->
 
 % Idle state.
 
+-spec idle(event(), session()) -> next_state(idle | connect).
+
 idle(start, #session{establishment = Estab} = Session) ->
   ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
   NewSession = Session#session{conn_retry_timer = ConnRetry},
@@ -70,6 +88,9 @@ idle(_Error, Session) ->
 
 
 % Connect state.
+
+-spec connect(event(), session()) ->
+        next_state(idle | connect | active | open_sent).
 
 connect(start, Session) ->
   error_logger:info_msg("FSM:connect/start~n"),
@@ -99,6 +120,9 @@ connect(_Event, Session) ->
 
 
 % Active state.
+
+-spec active(event(), session()) ->
+        next_state(idle | connect | active | open_sent).
 
 active(start, Session) ->
   error_logger:info_msg("FSM:active/start~n"),
@@ -150,6 +174,9 @@ active(_Event, Session) ->
 
 % OpenSent state
 
+-spec open_sent(event(), session()) ->
+        next_state(idle | active | open_sent | open_confirm).
+
 open_sent(start, Session) ->
   error_logger:info_msg("FSM:open_sent/start~n"),
   {next_state, open_sent, Session};
@@ -196,6 +223,9 @@ open_sent(_Event, Session) ->
 
 
 % OpenConfirm state.
+
+-spec open_confirm(event(), session()) ->
+        next_state(idle | open_confirm | established).
 
 open_confirm(start, Session) ->
   error_logger:info_msg("FSM:open_confirm/start~n"),
@@ -245,6 +275,8 @@ open_confirm(_Event, Session) ->
 
 
 % Established state.
+
+-spec established(event(), session()) -> next_state(idle | established).
 
 established(start, Session) ->
   error_logger:info_msg("FSM:established/start~n"),
