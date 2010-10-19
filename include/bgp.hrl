@@ -126,10 +126,10 @@
 }).
 
 -record(bgp_path_attr, {
-  optional   :: bit(),
-  transitive :: bit(),
-  partial    :: bit(),
-  extended   :: bit(),
+  optional   :: boolean(),
+  transitive :: boolean(),
+  partial    :: boolean(),
+  extended   :: boolean(),
   type_code  :: bgp_path_attr_type_code(),
   length     :: uint16(),
   value      :: any(),

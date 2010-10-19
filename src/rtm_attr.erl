@@ -20,23 +20,31 @@ fold(Fun, Init, Attrs) ->
 -spec attrs_to_binary(bgp_path_attrs()) -> binary().
 attrs_to_binary(Attrs) ->
   AttrList =
-    dict:fold(fun(_Type, [#bgp_path_attr{extended = Ext} = Attr], Acc) ->
+    dict:fold(fun(_Type, [#bgp_path_attr{extended = Extended} = Attr], Acc) ->
       {Type, Len, Val} = to_binary(Attr),
-      L = (Ext + 1) * 8,
+      L = (to_bit(Extended) + 1) * 8,
       [<< Type:16,Len:L,Val:Len/binary >> | Acc]
     end, [], Attrs),
   list_to_binary(AttrList).
 
 -spec to_binary(bgp_path_attr()) ->
         {bgp_path_attr_type_code(), uint16(), binary()}.
-to_binary(#bgp_path_attr{optional   = Opt,
-                         transitive = Trans,
+to_binary(#bgp_path_attr{optional   = Optional,
+                         transitive = Transitive,
                          partial    = Partial,
-                         extended   = Ext,
+                         extended   = Extended,
                          type_code  = TypeCode,
                          length     = Len,
                          raw_value  = Val}) ->
-  <<Type:16>> = <<Opt:1,Trans:1,Partial:1,Ext:1,0:4,TypeCode:8>>,
+  <<Type:16>> =
+    <<
+       (to_bit(Optional)):1,
+       (to_bit(Transitive)):1,
+       (to_bit(Partial)):1,
+       (to_bit(Extended)):1,
+       0:4,
+       TypeCode:8
+    >>,
   {Type, Len, Val}.
 
 -spec update_for_ebgp(bgp_path_attr_type_code(), bgp_path_attr(),
@@ -69,32 +77,26 @@ update_for_ibgp(TypeCode, Attr, PathAttrs) ->
 build(TypeCode, Bin, Flags) ->
   Length = size(Bin),
   InitAttr = #bgp_path_attr{
-    optional   = 0,
-    transitive = 0,
-    partial    = 0,
-    extended   = extended_bit(Length),
+    optional   = false,
+    transitive = false,
+    partial    = false,
+    extended   = is_extended(Length),
     type_code  = TypeCode,
     length     = Length,
     raw_value  = Bin
   },
   lists:foldl(fun(Flag, Acc) ->
     case Flag of
-      optional   -> Acc#bgp_path_attr{optional   = 1};
-      transitive -> Acc#bgp_path_attr{transitive = 1};
-      partial    -> Acc#bgp_path_attr{partial    = 1};
-      extended   -> Acc#bgp_path_attr{extended   = 1}
+      optional   -> Acc#bgp_path_attr{optional   = true};
+      transitive -> Acc#bgp_path_attr{transitive = true};
+      partial    -> Acc#bgp_path_attr{partial    = true};
+      extended   -> Acc#bgp_path_attr{extended   = true}
     end
   end, InitAttr, Flags).
 
 next_hop(Addr) ->
   Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
   build(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
-
-extended_bit(Length) ->
-  case Length > 255 of
-    true  -> 1;
-    false -> 0
-  end.
 
 prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
                                 type_code = ?BGP_PATH_ATTR_AS_PATH,
@@ -109,7 +111,12 @@ prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
   end,
   Length = size(NewPath),
   ASPath#bgp_path_attr{
-    extended  = case Extended of 0 -> extended_bit(Length); 1 -> 1 end,
+    extended  = Extended orelse is_extended(Length),
     length    = Length,
     raw_value = NewPath
   }.
+
+to_bit(false) -> 0;
+to_bit(true)  -> 1.
+
+is_extended(Length) -> Length > 255.

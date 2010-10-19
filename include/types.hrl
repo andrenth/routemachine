@@ -1,7 +1,6 @@
 -ifndef(TYPES_HRL).
 -define(TYPES_HRL, true).
 
--type bit()          :: 0 | 1.
 -type uint16()       :: 0..65535.
 -type uint32()       :: 0..4294967295.
 -type ipv4_address() :: {byte(), byte(), byte(), byte()}.

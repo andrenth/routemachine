@@ -94,10 +94,10 @@ parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed, WellKnown) ->
      OtherPathAttrs/binary >> = AttrRest,
   Value = parse_attr_value(AttrTypeCode, AttrValue),
   Attr = #bgp_path_attr{
-    optional   = AttrOptional,
-    transitive = AttrTransitive,
-    partial    = AttrPartial,
-    extended   = AttrExtended,
+    optional   = to_bool(AttrOptional),
+    transitive = to_bool(AttrTransitive),
+    partial    = to_bool(AttrPartial),
+    extended   = to_bool(AttrExtended),
     type_code  = AttrTypeCode,
     length     = AttrLength,
     value      = Value,
@@ -155,3 +155,6 @@ parse_prefixes(<<>>, Parsed) ->
 
 parse_prefixes(?BGP_PREFIX_PATTERN, Parsed) ->
   parse_prefixes(OtherPrefixes, [{Prefix, PrefixLength} | Parsed]).
+
+to_bool(0) -> false;
+to_bool(1) -> true.

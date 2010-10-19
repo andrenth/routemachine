@@ -146,34 +146,34 @@ validate_attr([_Attr | _More], _LocalASN) ->
 validate_flags(Attr) ->
   case Attr of
     #bgp_path_attr{type_code  = ?BGP_PATH_ATTR_ORIGIN,
-                   optional   = 0,
-                   transitive = 1} ->
+                   optional   = false,
+                   transitive = true} ->
       ok;
     #bgp_path_attr{type_code  = ?BGP_PATH_ATTR_AS_PATH,
-                   optional   = 0,
-                   transitive = 1} ->
+                   optional   = false,
+                   transitive = true} ->
       ok;
     #bgp_path_attr{type_code  = ?BGP_PATH_ATTR_NEXT_HOP,
-                   optional   = 0,
-                   transitive = 1} ->
+                   optional   = false,
+                   transitive = true} ->
       ok;
     #bgp_path_attr{type_code  = ?BGP_PATH_ATTR_MED,
-                   optional   = 1,
-                   transitive = 0} ->
+                   optional   = true,
+                   transitive = false} ->
       ok;
     #bgp_path_attr{type_code  = ?BGP_PATH_ATTR_LOCAL_PREF,
-                   optional   = 0,
-                   transitive = 1} ->
+                   optional   = false,
+                   transitive = true} ->
       ok;
     #bgp_path_attr{type_code  = ?BGP_PATH_ATTR_ATOMIC_AGGR,
-                   optional   = 0,
-                   transitive = 1} ->
+                   optional   = false,
+                   transitive = true} ->
       ok;
     #bgp_path_attr{type_code  = ?BGP_PATH_ATTR_AGGREGATOR,
-                   optional   = 1,
-                   transitive = 1} ->
+                   optional   = true,
+                   transitive = true} ->
       ok;
-    #bgp_path_attr{optional = 0} ->
+    #bgp_path_attr{optional = false} ->
       {error, {?BGP_UPDATE_ERR_ATTR_UNRECOG, rtm_attr:to_binary(Attr)}};
     _ ->
       {error, {?BGP_UPDATE_ERR_ATTR_FLAGS, rtm_attr:to_binary(Attr)}}
