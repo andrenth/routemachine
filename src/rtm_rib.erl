@@ -13,10 +13,13 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3,
          terminate/2]).
 
+-type rib() :: dict().
+
 -record(state, {
-  rib
+  rib :: rib()
 }).
 
+-spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
   gen_server:start_link(?MODULE, ok, []).
 
@@ -24,12 +27,16 @@ start_link() ->
 % API.
 %
 
+-spec get() -> rib().
 get() ->
   gen_server:call(?MODULE, get).
 
+-spec update(route(), prefix_list(), prefix_list()) ->
+        {prefix_list(), prefix_list(), rib()}.
 update(Route, NLRI, Withdrawn) ->
   gen_server:call(?MODULE, {update, Route, NLRI, Withdrawn}).
 
+-spec remove_prefixes() -> prefix_list().
 remove_prefixes() ->
   gen_server:call(?MODULE, remove_prefixes).
 
@@ -91,6 +98,8 @@ terminate(_Reason, #state{rib = RIB}) ->
 % Internal functions.
 %
 
+-spec del_prefixes(rib(), prefix_list(), pid()) ->
+        {prefix_list(), dict(), rib()}.
 del_prefixes(RIB, Prefixes, FSM) ->
   lists:foldl(fun({Pref, Len}, {Deleted, Replacements, AccRIB}) ->
     case remove_entry({Pref, Len}, AccRIB, FSM) of
@@ -103,6 +112,10 @@ del_prefixes(RIB, Prefixes, FSM) ->
     end
   end, {[], dict:new(), RIB}, Prefixes).
 
+-spec remove_entry({prefix(), prefix_len()}, rib(), pid()) ->
+          {replaced, route(), rib()}
+        | {unfeasible, {prefix(), prefix_len()}, rib()}
+        | {inactive, rib()}.
 remove_entry({Prefix, Len}, RIB, FSM) ->
   case dict:find({Prefix, Len}, RIB) of
     {ok, Entries} ->
@@ -125,6 +138,7 @@ remove_entry({Prefix, Len}, RIB, FSM) ->
       {inactive, RIB}
   end.
 
+-spec del_routes(prefix(), prefix_len(), [route()]) -> boolean().
 del_routes(Prefix, Len, Routes) ->
   del_routes(Prefix, Len, Routes, false).
 
@@ -140,6 +154,8 @@ del_routes(Prefix, Len, [#route{next_hop = NextHop, active = Active} | Rs],
       del_routes(Prefix, Len, Rs, Removed)
   end.
 
+-spec add_next_best(prefix(), prefix_len(), [route()]) ->
+        {ok, route()} | not_found.
 add_next_best(_Prefix, _Len, []) ->
   not_found;
 add_next_best(Prefix, Len,
@@ -147,6 +163,7 @@ add_next_best(Prefix, Len,
   add_route(Prefix, Len, NextHop),
   {ok, Route}.
 
+-spec add_prefixes(rib(), route(), prefix_list()) -> {prefix_list(), rib()}.
 add_prefixes(RIB, #route{next_hop = NextHop} = Route, Prefixes) ->
   InsertPrefix = fun({Pref, Len}, {Added, AccRIB}) ->
     case dict:find({Pref, Len}, AccRIB) of
@@ -167,6 +184,8 @@ add_prefixes(RIB, #route{next_hop = NextHop} = Route, Prefixes) ->
   end,
   lists:foldl(InsertPrefix, {[], RIB}, Prefixes).
 
+-spec insert_route([route()], prefix(), prefix_len(), route()) ->
+        {active | inactive, [route()]}.
 insert_route(Entries, Prefix, Len, Route) ->
   insert_route(Entries, Prefix, Len, Route, true).
 
@@ -268,10 +287,10 @@ ebgp(#route{ebgp = false}, #route{ebgp = true}) -> -1;
 ebgp(#route{}, #route{}) -> 0.
 
 bgp_id(#route{bgp_id = BGPId1}, #route{bgp_id = BGPId2}) ->
-  BGPId2 - BGPId1.
+  tuple_cmp(BGPId2, BGPId1).
 
 peer_addr(#route{peer_addr = PeerAddr1}, #route{peer_addr = PeerAddr2}) ->
-  PeerAddr2 - PeerAddr1.
+  tuple_cmp(PeerAddr2, PeerAddr1).
 
 neighbor([]) -> 0;
 neighbor([ASN | _Rest]) -> ASN.
@@ -287,3 +306,19 @@ attr_value(Attr, #route{path_attrs = PathAttrs}) ->
 
 % TODO
 default_attr_value(_) -> 0.
+
+
+tuple_cmp(T1, T2) ->
+  tuple_cmp({T1, tuple_size(T1)}, {T2, tuple_size(T2)}, 1).
+
+tuple_cmp({_, 0}, {_, 0}, _) ->
+  0;
+tuple_cmp({_, 0}, {_, _}, _) ->
+  -1;
+tuple_cmp({_, _}, {_, 0}, _) ->
+  1;
+tuple_cmp({T1, S1}, {T2, S2}, N) ->
+  case element(N, T1) - element(N, T2) of
+    0 -> tuple_cmp({T1, S1-1}, {T2, S2-1}, N+1);
+    X -> X
+  end.

@@ -205,7 +205,9 @@
 -type(uint16()       :: 0..65535).
 -type(uint32()       :: 0..4294967295).
 -type(ipv4_address() :: {byte(), byte(), byte(), byte()}).
--type(prefix_list()  :: [{uint32(), 0..32}]).
+-type(prefix()       :: uint32()).
+-type(prefix_len()   :: 0..32).
+-type(prefix_list()  :: [{prefix(), prefix_len()}]).
 
 -type(bgp_msg_type() :: ?BGP_TYPE_OPEN..?BGP_TIMER_KEEPALIVE).
 -type(bgp_msg_len()  :: ?BGP_HEADER_LENGTH..?BGP_MAX_MSG_LEN).

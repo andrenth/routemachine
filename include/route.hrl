@@ -1,9 +1,11 @@
 -record(route, {
-  active,
-  next_hop,
-  path_attrs,
-  ebgp,
-  bgp_id,
-  peer_addr,
-  fsm
+  active      :: boolean(),
+  next_hop    :: uint32(),
+  path_attrs  :: bgp_path_attrs(),
+  ebgp        :: boolean(),
+  bgp_id      :: ipv4_address(),
+  peer_addr   :: ipv4_address(),
+  fsm         :: pid()
 }).
+
+-type route() :: #route{}.
