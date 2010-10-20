@@ -232,21 +232,10 @@ validate_missing_well_known_attrs(#bgp_update{well_known_attrs = Flags}) ->
 check_well_known_flags(_Flags, []) ->
   ok;
 check_well_known_flags(Flags, [Type | Rest]) ->
-  case check_flag(Flags, Type) of
-    false -> {error, {?BGP_UPDATE_ERR_ATTR_MISSING}, <<Type:8>>};
+  case flag_is_set(Type, Flags) of
+    false -> {error, {?BGP_UPDATE_ERR_ATTR_MISSING, <<Type:8>>}};
     true  -> check_well_known_flags(Flags, Rest)
   end.
-
-check_flag(Flags, ?BGP_PATH_ATTR_ORIGIN) ->
-  flag_is_set(?BGP_WELL_KNOWN_FLAG_ORIGIN, Flags);
-check_flag(Flags, ?BGP_PATH_ATTR_AS_PATH) ->
-  flag_is_set(?BGP_WELL_KNOWN_FLAG_AS_PATH, Flags);
-check_flag(Flags, ?BGP_PATH_ATTR_NEXT_HOP) ->
-  flag_is_set(?BGP_WELL_KNOWN_FLAG_NEXT_HOP, Flags);
-check_flag(Flags, ?BGP_PATH_ATTR_LOCAL_PREF) ->
-  flag_is_set(?BGP_WELL_KNOWN_FLAG_LOCAL_PREF, Flags);
-check_flag(Flags, ?BGP_PATH_ATTR_ATOMIC_AGGR) ->
-  flag_is_set(?BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR, Flags).
 
 flag_is_set(Flag, Flags) ->
   Flags band Flag =/= 0.
