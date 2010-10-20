@@ -26,7 +26,7 @@ update(Msg, MsgLen, LocalASN) ->
   validate(Msg, ?BGP_ERR_UPDATE,
            [fun(M) -> validate_update_length(M, MsgLen) end,
             fun(M) -> validate_path_attrs(M, LocalASN) end,
-            fun validate_missing_well_known_attrs/1]).
+            fun validate_mandatory_attrs/1]).
 
 %
 % Internal functions.
@@ -222,23 +222,18 @@ validate_as_path([{_Type, LocalASN} | _Rest], LocalASN) ->
 validate_as_path([{_Type, _ASN} | Rest], LocalASN) ->
   validate_as_path(Rest, LocalASN).
 
-validate_missing_well_known_attrs(#bgp_update{well_known_attrs = Flags}) ->
-  check_well_known_flags(Flags, [?BGP_PATH_ATTR_ORIGIN,
-                                 ?BGP_PATH_ATTR_AS_PATH,
-                                 ?BGP_PATH_ATTR_NEXT_HOP,
-                                 ?BGP_PATH_ATTR_LOCAL_PREF,
-                                 ?BGP_PATH_ATTR_ATOMIC_AGGR]).
+validate_mandatory_attrs(#bgp_update{path_attrs = PathAttrs}) ->
+  check_mandatory_attrs(PathAttrs, [?BGP_PATH_ATTR_ORIGIN,
+                                    ?BGP_PATH_ATTR_AS_PATH,
+                                    ?BGP_PATH_ATTR_NEXT_HOP]).
 
-check_well_known_flags(_Flags, []) ->
+check_mandatory_attrs(_Attrs, []) ->
   ok;
-check_well_known_flags(Flags, [Type | Rest]) ->
-  case flag_is_set(Type, Flags) of
-    false -> {error, {?BGP_UPDATE_ERR_ATTR_MISSING, <<Type:8>>}};
-    true  -> check_well_known_flags(Flags, Rest)
+check_mandatory_attrs(Attrs, [Attr | Rest]) ->
+  case dict:is_key(Attr, Attrs) of
+    true  -> check_mandatory_attrs(Attrs, Rest);
+    false -> {error, {?BGP_UPDATE_ERR_ATTR_MISSING, <<Attr:8>>}}
   end.
-
-flag_is_set(Flag, Flags) ->
-  Flags band Flag =/= 0.
 
 validate(_Rec, _Code, []) ->
   ok;

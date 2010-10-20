@@ -31,13 +31,6 @@
 -define(BGP_PATH_ATTR_ATOMIC_AGGR, 6).
 -define(BGP_PATH_ATTR_AGGREGATOR,  7).
 
-% Well-known attributes (flags used in message validation).
--define(BGP_WELL_KNOWN_FLAG_ORIGIN,       1).
--define(BGP_WELL_KNOWN_FLAG_AS_PATH,      2).
--define(BGP_WELL_KNOWN_FLAG_NEXT_HOP,     4).
--define(BGP_WELL_KNOWN_FLAG_LOCAL_PREF,   8).
--define(BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR, 16).
-
 % Path attribute values.
 -define(BGP_ORIGIN_IGP,        0).
 -define(BGP_ORIGIN_EGP,        1).
@@ -121,7 +114,6 @@
   attrs_len        :: uint16(),
   withdrawn_routes :: prefix_list(),
   path_attrs       :: bgp_path_attrs(),
-  well_known_attrs :: uint16(),
   nlri             :: prefix_list()
 }).
 

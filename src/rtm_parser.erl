@@ -38,13 +38,11 @@ parse_open(?BGP_OPEN_PATTERN, Marker, ConfigASN, ConfigID) ->
 -spec(parse_update(binary(), uint16(), uint16()) -> {ok, bgp_update()}
                                                   | {error, bgp_error()}).
 parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
-  {Attrs, WellKnown} = parse_path_attrs(PathAttrs),
   Msg = #bgp_update{
     unfeasible_len   = UnfeasableLength,
     attrs_len        = TotalPathAttrLength,
     withdrawn_routes = parse_prefixes(WithdrawnRoutes),
-    path_attrs       = Attrs,
-    well_known_attrs = WellKnown,
+    path_attrs       = parse_path_attrs(PathAttrs),
     nlri             = parse_prefixes(NLRI)
   },
   case rtm_validate:update(Msg, Len, LocalASN) of
@@ -81,12 +79,11 @@ parse_opt_params(?BGP_OPT_PARAMS_PATTERN, ParsedParams) ->
 % Helpers for UPDATE.
 
 parse_path_attrs(Attrs) ->
-  parse_path_attrs(Attrs, dict:new(), 0).
+  parse_path_attrs(Attrs, dict:new()).
 
-parse_path_attrs(<<>>, Parsed, WellKnown) ->
-  {Parsed, WellKnown};
-
-parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed, WellKnown) ->
+parse_path_attrs(<<>>, Parsed) ->
+  Parsed;
+parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed) ->
   AttrLengthLength = (AttrExtended + 1) * 8,
   << AttrTypeCode : 8,
      AttrLength   : AttrLengthLength,
@@ -103,23 +100,7 @@ parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed, WellKnown) ->
     value      = Value,
     raw_value  = AttrValue % XXX this is just to ease the creation
   },                       %     of NOTIFICATION messages.
-  NewWellKnown = add_flag(WellKnown, AttrTypeCode),
-  parse_path_attrs(OtherPathAttrs, dict:append(AttrTypeCode, Attr, Parsed),
-                   NewWellKnown).
-
-
-add_flag(Flags, ?BGP_PATH_ATTR_ORIGIN) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_ORIGIN;
-add_flag(Flags, ?BGP_PATH_ATTR_AS_PATH) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_AS_PATH;
-add_flag(Flags, ?BGP_PATH_ATTR_NEXT_HOP) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_NEXT_HOP;
-add_flag(Flags, ?BGP_PATH_ATTR_LOCAL_PREF) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_LOCAL_PREF;
-add_flag(Flags, ?BGP_PATH_ATTR_ATOMIC_AGGR) ->
-  Flags bor ?BGP_WELL_KNOWN_FLAG_ATOMIC_AGGR;
-add_flag(Flags, _) ->
-  Flags.
+  parse_path_attrs(OtherPathAttrs, dict:append(AttrTypeCode, Attr, Parsed)).
 
 parse_attr_value(?BGP_PATH_ATTR_ORIGIN, <<Value:8>>) ->
   Value;
