@@ -10,7 +10,7 @@ get(Attr, PathAttrs) ->
   [#bgp_path_attr{value = Value}] = dict:fetch(Attr, PathAttrs),
   Value.
 
--spec fold(fun((bgp_path_attr_type_code(), bgp_path_attr(), any()) -> any()),
+-spec fold(fun((bgp_path_attr_type_code(), #bgp_path_attr{}, any()) -> any()),
            any(), bgp_path_attrs()) -> any().
 fold(Fun, Init, Attrs) ->
   dict:fold(fun(TypeCode, [Attr], Acc) ->
@@ -27,7 +27,7 @@ attrs_to_binary(Attrs) ->
     end, [], Attrs),
   list_to_binary(AttrList).
 
--spec to_binary(bgp_path_attr()) ->
+-spec to_binary(#bgp_path_attr{}) ->
         {bgp_path_attr_type_code(), uint16(), binary()}.
 to_binary(#bgp_path_attr{optional   = Optional,
                          transitive = Transitive,
@@ -47,7 +47,7 @@ to_binary(#bgp_path_attr{optional   = Optional,
     >>,
   {Type, Len, Val}.
 
--spec update_for_ebgp(bgp_path_attr_type_code(), bgp_path_attr(),
+-spec update_for_ebgp(bgp_path_attr_type_code(), #bgp_path_attr{},
                       bgp_path_attrs(), uint16(), ipv4_address()) ->
         bgp_path_attrs().
 update_for_ebgp(TypeCode, Attr, PathAttrs, ASN, Addr) ->
@@ -62,7 +62,7 @@ update_for_ebgp(TypeCode, Attr, PathAttrs, ASN, Addr) ->
       PathAttrs
   end.
 
--spec update_for_ibgp(bgp_path_attr_type_code(), bgp_path_attr(),
+-spec update_for_ibgp(bgp_path_attr_type_code(), #bgp_path_attr{},
                       bgp_path_attrs()) -> bgp_path_attrs().
 update_for_ibgp(TypeCode, Attr, PathAttrs) ->
   case TypeCode of

@@ -94,19 +94,19 @@
   msg_type :: bgp_msg_type()
 }).
 
+-record(bgp_opt_param, {
+  type    :: byte(),
+  length  :: byte(),
+  value   :: binary()
+}).
+
 -record(bgp_open, {
   version        :: byte(),
   asn            :: uint16(),
   hold_time      :: uint16(),
   bgp_id         :: ipv4_address(),
   opt_params_len :: byte(),
-  opt_params     :: [bgp_opt_param()]
-}).
-
--record(bgp_opt_param, {
-  type    :: byte(),
-  length  :: byte(),
-  value   :: binary()
+  opt_params     :: [#bgp_opt_param{}]
 }).
 
 -record(bgp_update,{
@@ -201,14 +201,6 @@
 -type bgp_msg_type()     :: ?BGP_TYPE_OPEN..?BGP_TIMER_KEEPALIVE.
 -type bgp_msg_len()      :: ?BGP_HEADER_LENGTH..?BGP_MAX_MSG_LEN.
 
--type bgp_header()       :: #bgp_header{}.
--type bgp_open()         :: #bgp_open{}.
--type bgp_update()       :: #bgp_update{}.
--type bgp_notification() :: #bgp_notification{}.
-
--type bgp_opt_param()    :: #bgp_opt_param{}.
-
--type bgp_path_attr()    :: #bgp_path_attr{}.
 -type bgp_path_attrs()   :: dict().
 -type bgp_path_attr_type_code() ::
         ?BGP_PATH_ATTR_ORIGIN..?BGP_PATH_ATTR_AGGREGATOR.
