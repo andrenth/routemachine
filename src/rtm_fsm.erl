@@ -99,7 +99,7 @@ connect(start, Session) ->
 connect(tcp_open, Session) ->
   error_logger:info_msg("FSM:connect/tcp_open~n"),
   clear_timer(Session#session.conn_retry_timer),
-  send_open(Session),
+  rtm_msg:send_open(Session),
   {next_state, open_sent, Session};
 
 connect(tcp_open_failed, Session) ->
@@ -133,7 +133,7 @@ active(tcp_open, Session) ->
   case check_peer(Session) of
     ok ->
       clear_timer(Session#session.conn_retry_timer),
-      send_open(Session),
+      rtm_msg:send_open(Session),
       HoldTimer = start_timer(hold, Session#session.hold_time),
       {next_state, open_sent, Session#session{hold_timer = HoldTimer}};
     bad_peer ->
@@ -149,15 +149,15 @@ active({open_received, Bin, Marker},
   clear_timer(Session#session.conn_retry_timer),
   case rtm_parser:parse_open(Bin, Marker, PeerASN, PeerAddr) of
     {ok, #bgp_open{asn = ASN, bgp_id = BGPId, hold_time = HoldTime}} ->
-      send_open(Session),
-      send_keepalive(Session),
+      rtm_msg:send_open(Session),
+      rtm_msg:send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
       {next_state, open_confirm, NewSession#session{peer_asn    = ASN,
                                                     peer_bgp_id = BGPId}};
     {error, Error} ->
       log_error(Error),
-      send_notification(Session, Error),
+      rtm_msg:send_notification(Session, Error),
       {stop, normal, Session}
   end;
 
@@ -183,7 +183,7 @@ open_sent(start, Session) ->
 
 open_sent(stop, Session) ->
   error_logger:info_msg("FSM:open_sent/stop~n"),
-  send_notification(Session, ?BGP_ERR_CEASE),
+  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
 open_sent({open_received, Bin, Marker},
@@ -191,20 +191,20 @@ open_sent({open_received, Bin, Marker},
   error_logger:info_msg("FSM:open_sent/open_received~n"),
   case rtm_parser:parse_open(Bin, Marker, PeerASN, PeerAddr) of
     {ok, #bgp_open{asn = ASN, bgp_id = BGPId, hold_time = HoldTime}} ->
-      send_keepalive(Session),
+      rtm_msg:send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
       {next_state, open_confirm, NewSession#session{peer_asn    = ASN,
                                                     peer_bgp_id = BGPId}};
     {error, Error} ->
       log_error(Error),
-      send_notification(Session, Error),
+      rtm_msg:send_notification(Session, Error),
       {stop, normal, Session}
   end;
 
 open_sent({timeout, _Ref, hold}, Session) ->
   error_logger:info_msg("FSM:open_sent/hold_timeout~n"),
-  send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {stop, normal, Session};
 
 open_sent(tcp_closed, Session) ->
@@ -218,7 +218,7 @@ open_sent(tcp_fatal, Session) ->
 
 open_sent(_Event, Session) ->
   error_logger:info_msg("FSM:open_sent/other(~p)~n", [_Event]),
-  send_notification(Session, ?BGP_ERR_FSM),
+  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
   {stop, normal, Session}.
 
 
@@ -233,7 +233,7 @@ open_confirm(start, Session) ->
 
 open_confirm(stop, Session) ->
   error_logger:info_msg("FSM:open_confirm/stop~n"),
-  send_notification(Session, ?BGP_ERR_CEASE),
+  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
   {stop, normal, Session};
 
 open_confirm(keepalive_received, #session{} = Session) ->
@@ -246,7 +246,7 @@ open_confirm(keepalive_received, #session{} = Session) ->
 
 open_confirm({timeout, _Ref, hold}, Session) ->
   error_logger:info_msg("FSM:open_confirm/hold_timeout~n"),
-  send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {next_state, idle, Session};
 
 open_confirm({notification_received, Bin}, Session) ->
@@ -257,7 +257,7 @@ open_confirm({notification_received, Bin}, Session) ->
 open_confirm({timeout, _Ref, keepalive}, Session) ->
   error_logger:info_msg("FSM:open_confirm/keepalive_timeout~n"),
   KeepAlive = restart_timer(keepalive, Session),
-  send_keepalive(Session),
+  rtm_msg:send_keepalive(Session),
   {next_state, open_confirm, Session#session{keepalive_timer = KeepAlive}};
 
 open_confirm(tcp_closed, Session) ->
@@ -270,7 +270,7 @@ open_confirm(tcp_fatal, Session) ->
 
 open_confirm(_Event, Session) ->
   error_logger:info_msg("FSM:open_confirm/other(~p)~n", [_Event]),
-  send_notification(Session, ?BGP_ERR_FSM),
+  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
   {stop, normal, Session}.
 
 
@@ -284,7 +284,7 @@ established(start, Session) ->
 
 established(stop, Session) ->
   error_logger:info_msg("FSM:established/stop~n"),
-  send_notification(Session, ?BGP_ERR_CEASE),
+  rtm_msg:send_notification(Session, ?BGP_ERR_CEASE),
   {stop, stop, Session};
 
 established({update_received, Bin, Len},
@@ -298,7 +298,7 @@ established({update_received, Bin, Len},
       {next_state, established, NewSession};
     {error, Error} ->
       log_error(Error),
-      send_notification(NewSession, ?BGP_ERR_UPDATE),
+      rtm_msg:send_notification(NewSession, ?BGP_ERR_UPDATE),
       {stop, normal, NewSession}
   end;
 
@@ -314,13 +314,13 @@ established({notification_received, Bin}, Session) ->
 
 established({timeout, _Ref, hold}, Session) ->
   error_logger:info_msg("FSM:established/hold_timeout~n"),
-  send_notification(Session, ?BGP_ERR_HOLD_TIME),
+  rtm_msg:send_notification(Session, ?BGP_ERR_HOLD_TIME),
   {stop, normal, Session};
 
 established({timeout, _Ref, keepalive}, Session) ->
   error_logger:info_msg("FSM:established/keepalive_timeout~n"),
   KeepAlive = restart_timer(keepalive, Session),
-  send_keepalive(Session),
+  rtm_msg:send_keepalive(Session),
   {next_state, established, Session#session{keepalive_timer = KeepAlive}};
 
 established(tcp_closed, Session) ->
@@ -333,7 +333,7 @@ established(tcp_fatal, Session) ->
 
 established(_Event, Session) ->
   error_logger:info_msg("FSM:established/other(~p)~n", [_Event]),
-  send_notification(Session, ?BGP_ERR_FSM),
+  rtm_msg:send_notification(Session, ?BGP_ERR_FSM),
   {stop, normal, Session}.
 
 
@@ -409,7 +409,7 @@ close_connection(#session{server = Server} = Session) ->
 release_resources(Session) ->
   NewSession = close_connection(Session),
   Deleted = rtm_rib:remove_prefixes(),
-  send_updates(Session, peers(), dict:new(), [], Deleted),
+  rtm_msg:send_updates(Session, peers(), dict:new(), [], Deleted),
   clear_timer(Session#session.conn_retry_timer),
   clear_timer(Session#session.hold_timer),
   clear_timer(Session#session.keepalive_timer),
@@ -475,23 +475,23 @@ redistribute_routes(#session{server = Originator} = Session, Attrs,
     false -> ebgp_peers()
   end,
   Servers = lists:filter(fun(Server) -> Server =/= Originator end, AllServers),
-  send_updates(Session, Servers, Attrs, Added, Deleted),
-  send_updates(Session, Servers, Replacements).
+  rtm_msg:send_updates(Session, Servers, Attrs, Added, Deleted),
+  rtm_msg:send_updates(Session, Servers, Replacements).
 
 distribute_installed_routes(#session{server = Server} = Session) ->
-  send_updates(Session, [Server], rtm_rib:best_routes()).
+  rtm_msg:send_updates(Session, [Server], rtm_rib:best_routes()).
 
 is_ebgp(#session{local_asn = LocalASN, peer_asn = PeerASN}) ->
   LocalASN =/= PeerASN.
 
-join_established_group(#session{server = Server} = Session) ->
-  ok = pg2:join(established_group(Session), Server).
-
-established_group(Session) ->
-  case is_ebgp(Session) of
-    true  -> established_ebgp;
-    false -> established_ibgp
-  end.
+join_established_group(#session{local_asn = LocalASN,
+                                peer_asn  = PeerASN,
+                                server = Server}) ->
+  Group = case LocalASN =:= PeerASN of
+    true  -> established_ibgp;
+    false -> established_ebgp
+  end,
+  ok = pg2:join(Group, Server).
 
 peers() ->
   ebgp_peers() ++ ibgp_peers().
@@ -501,60 +501,3 @@ ebgp_peers() ->
 
 ibgp_peers() ->
   pg2:get_members(established_ibgp).
-
-
-% Message sending.
-
-send_open(#session{server     = Server,
-                   local_asn  = ASN,
-                   hold_time  = HoldTime,
-                   local_addr = LocalAddr}) ->
-  Msg = rtm_msg:open(ASN, HoldTime, LocalAddr),
-  send(Server, Msg).
-
-send_updates(Session, Servers, Attrs, Added, Deleted) ->
-  AttrsToSend = update_path_attrs(Session, Attrs),
-  lists:foreach(fun(Server) ->
-    send_update(Server, AttrsToSend, Added, Deleted)
-  end, Servers).
-
-send_updates(Session, Servers, Routes) ->
-  dict:fold(fun(#route{path_attrs = Attrs}, Prefixes, ok) ->
-    AttrsToSend = update_path_attrs(Session, Attrs),
-    lists:foreach(fun(Server) ->
-      send_update(Server, AttrsToSend, Prefixes, [])
-    end, Servers)
-  end, ok, Routes).
-
-send_update(Server, PathAttrs, Added, Deleted) ->
-  Msg = rtm_msg:update(PathAttrs, Added, Deleted),
-  send(Server, Msg).
-
-send_notification(#session{server = Server}, Error) ->
-  send(Server, rtm_msg:notification(Error)).
-
-send_keepalive(#session{server = Server}) ->
-  send(Server, rtm_msg:keepalive()).
-
-send(Server, Bin) ->
-  rtm_server:send_msg(Server, Bin).
-
-% ORIGIN: always keep
-% AS_PATH: update if propagating to external peer or when originating
-% NEXT_HOP: update if propagating to external peer
-% MED: propagate only to internal peers
-% LOCAL_PREF: propagate only to internal peers
-% ATOMIC_AGGREGATE: always propagate
-% TODO AGGREGATOR: propagate if doing aggregation
-update_path_attrs(#session{local_asn  = LocalASN,
-                           local_addr = LocalAddr} = Session,
-                  PathAttrs) ->
-  UpdateAttrs = case established_group(Session) of
-    established_ebgp ->
-      fun(TypeCode, Attr, Attrs) ->
-        rtm_attr:update_for_ebgp(TypeCode, Attr, Attrs, LocalASN, LocalAddr)
-      end;
-    established_ibgp ->
-      fun rtm_attr:update_for_ibgp/3
-  end,
-  rtm_attr:fold(UpdateAttrs, PathAttrs, PathAttrs).
