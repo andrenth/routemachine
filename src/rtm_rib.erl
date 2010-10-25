@@ -7,7 +7,7 @@
 -export([start_link/0]).
 
 % API.
--export([get/0, update/3, remove_prefixes/0]).
+-export([best_routes/0, update/3, remove_prefixes/0]).
 
 % Exports for gen_server.
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3,
@@ -25,9 +25,9 @@ start_link() ->
 % API.
 %
 
--spec get() -> rib().
-get() ->
-  gen_server:call(?MODULE, get).
+-spec best_routes() -> dict().
+best_routes() ->
+  gen_server:call(?MODULE, best_routes).
 
 -spec update(route(), prefix_list(), prefix_list()) ->
         {prefix_list(), prefix_list(), rib()}.
@@ -48,7 +48,7 @@ init(ok) ->
   register(?MODULE, self()),
   {ok, #state{rib = dict:new()}}.
 
-handle_call(get, _From, #state{rib = RIB} = State) ->
+handle_call(best_routes, _From, #state{rib = RIB} = State) ->
   Routes = dict:fold(fun({Prefix, Len}, Entries, Best) ->
     case Entries of
       [Route | _Rest] -> dict:append(Route, {Prefix, Len}, Best);

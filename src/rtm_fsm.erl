@@ -479,7 +479,7 @@ redistribute_routes(#session{server = Originator} = Session, Attrs,
   send_updates(Session, Servers, Replacements).
 
 distribute_installed_routes(#session{server = Server} = Session) ->
-  send_updates(Session, [Server], rtm_rib:get()).
+  send_updates(Session, [Server], rtm_rib:best_routes()).
 
 is_ebgp(#session{local_asn = LocalASN, peer_asn = PeerASN}) ->
   LocalASN =/= PeerASN.
