@@ -422,7 +422,7 @@ check_peer(#session{server = Server, peer_addr = PeerAddr}) ->
   end.
 
 negotiate_hold_time(LocalHoldTime, PeerHoldTime) ->
-  HoldTime = min(LocalHoldTime, PeerHoldTime),
+  HoldTime = erlang:min(LocalHoldTime, PeerHoldTime),
   case HoldTime < ?BGP_TIMER_HOLD_MIN of
     true  -> 0;
     false -> HoldTime
