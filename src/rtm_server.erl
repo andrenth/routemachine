@@ -15,14 +15,12 @@
 -record(state, {
   socket    :: port(),
   data      :: binary(),
-  data_proc :: fun((state()) -> state()),
+  data_proc :: fun((#state{}) -> #state{}),
   msg_type  :: bgp_msg_type(),
   msg_len   :: bgp_msg_len(),
   marker    :: non_neg_integer(),
   fsm       :: pid()
 }).
-
--type state() :: #state{}.
 
 start_link(FSM) ->
   gen_server:start_link(?MODULE, FSM, []).
@@ -97,7 +95,7 @@ code_change(_OldVsn, State, _Extra) ->
 % Internal functions.
 %
 
--spec process_header(state()) -> state().
+-spec process_header(#state{}) -> #state{}.
 
 process_header(#state{data = Data} = State)
                when byte_size(Data) >= ?BGP_HEADER_LENGTH ->
@@ -119,7 +117,7 @@ process_header(#state{data = Data} = State)
 process_header(State) ->
   State.
 
--spec process_message(state()) -> state().
+-spec process_message(#state{}) -> #state{}.
 
 process_message(#state{data     = Data,
                        msg_type = Type,
