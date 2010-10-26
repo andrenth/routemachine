@@ -46,4 +46,4 @@ init({ListenPort, Sessions}) ->
   {ok, {{one_for_one, 1, 1}, ChildSpecs}}.
 
 is_active(_IP, #session{establishment = active}) -> true;
-is_active(_IP, #session{establishment = passive}) -> false.
+is_active(_IP, #session{establishment = {passive, _Socket}}) -> false.
