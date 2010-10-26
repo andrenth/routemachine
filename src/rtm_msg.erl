@@ -17,7 +17,8 @@ send_open(#session{server     = Server,
                    hold_time  = HoldTime,
                    local_addr = LocalAddr}) ->
   Msg = build_open(Asn, HoldTime, LocalAddr),
-  send(Server, Msg).
+  send(Server, Msg),
+  ok.
 
 -spec send_updates(#session{}, [pid()], dict(), [prefix()], [prefix()]) ->
         ok.
