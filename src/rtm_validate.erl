@@ -13,20 +13,20 @@ header(Hdr) ->
 
 -spec open(#bgp_open{}, non_neg_integer(), uint16(), ipv4_address()) ->
         ok | {error, bgp_error()}.
-open(Msg, Marker, ConfigASN, ConfigID) ->
+open(Msg, Marker, ConfigAsn, ConfigId) ->
   validate(Msg, ?BGP_ERR_OPEN,
            [fun validate_version/1,
-            fun(M) -> validate_asn(M, ConfigASN) end,
+            fun(M) -> validate_asn(M, ConfigAsn) end,
             fun validate_hold_time/1,
-            fun(M) -> validate_bgp_id(M, ConfigID) end,
+            fun(M) -> validate_bgp_id(M, ConfigId) end,
             fun(M) -> validate_opt_params(M, Marker) end]).
 
 -spec update(#bgp_update{}, bgp_msg_len(), uint16()) ->
         ok | {error,bgp_error()}.
-update(Msg, MsgLen, LocalASN) ->
+update(Msg, MsgLen, LocalAsn) ->
   validate(Msg, ?BGP_ERR_UPDATE,
            [fun(M) -> validate_update_length(M, MsgLen) end,
-            fun(M) -> validate_path_attrs(M, LocalASN) end,
+            fun(M) -> validate_path_attrs(M, LocalAsn) end,
             fun validate_mandatory_attrs/1]).
 
 %
@@ -75,8 +75,8 @@ validate_version(#bgp_open{version = 4}) ->
 validate_version(#bgp_open{}) ->
   {error, {?BGP_OPEN_ERR_VERSION, <<4:16>>}}.
 
-validate_asn(#bgp_open{asn = ASN}, ConfigASN) ->
-  case ASN =:= ConfigASN of
+validate_asn(#bgp_open{asn = Asn}, ConfigAsn) ->
+  case Asn =:= ConfigAsn of
     true  -> ok;
     false -> {error, ?BGP_OPEN_ERR_PEER_AS}
   end.
@@ -86,8 +86,8 @@ validate_hold_time(#bgp_open{hold_time = HoldTime}) when HoldTime < 3 ->
 validate_hold_time(#bgp_open{}) ->
   ok.
 
-validate_bgp_id(#bgp_open{bgp_id = Id}, ConfigID) ->
-  case Id =:= ConfigID of
+validate_bgp_id(#bgp_open{bgp_id = Id}, ConfigId) ->
+  case Id =:= ConfigId of
     true  -> ok;
     false -> {error, ?BGP_OPEN_ERR_BGP_ID}
   end.
@@ -121,25 +121,25 @@ validate_update_length(#bgp_update{unfeasible_len = ULen, attrs_len = ALen},
     false -> ok
   end.
 
-validate_path_attrs(#bgp_update{path_attrs = PathAttrs}, LocalASN) ->
+validate_path_attrs(#bgp_update{path_attrs = PathAttrs}, LocalAsn) ->
   try
     dict:fold(fun(_Type, Attr, ok) ->
-      validate_attr(Attr, LocalASN)
+      validate_attr(Attr, LocalAsn)
     end, ok, PathAttrs)
   catch
     throw:Error -> Error
   end.
 
-validate_attr([Attr], LocalASN) ->
+validate_attr([Attr], LocalAsn) ->
   Vs = [fun validate_flags/1,
         fun validate_attr_len/1,
-        fun(A) -> validate_value(A, LocalASN) end],
+        fun(A) -> validate_value(A, LocalAsn) end],
   case validate(Attr, ?BGP_ERR_UPDATE, Vs) of
     ok -> ok;
     {error, {_, SubCode, Data}} -> throw({error, {SubCode, Data}})
   end;
 
-validate_attr([_Attr | _More], _LocalASN) ->
+validate_attr([_Attr | _More], _LocalAsn) ->
   % Duplicate attribute.
   throw({error, ?BGP_UPDATE_ERR_ATTR_LIST}).
 
@@ -206,22 +206,22 @@ validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_NEXT_HOP,
   {error, {?BGP_UPDATE_ERR_NEXT_HOP, rtm_attr:to_binary(Attr)}};
 
 validate_value(#bgp_path_attr{type_code = ?BGP_PATH_ATTR_AS_PATH,
-                              value     = Val}, LocalASN) ->
-  validate_as_path(Val, LocalASN);
+                              value     = Val}, LocalAsn) ->
+  validate_as_path(Val, LocalAsn);
 
 validate_value(#bgp_path_attr{}, _) ->
   ok.
 
-validate_as_path([], _LocalASN) ->
+validate_as_path([], _LocalAsn) ->
   ok;
-validate_as_path([{Type, _ASN} | _Rest], _LocalASN)
+validate_as_path([{Type, _Asn} | _Rest], _LocalAsn)
                  when Type =/= ?BGP_AS_PATH_SET
                  andalso Type =/= ?BGP_AS_PATH_SEQUENCE ->
   {error, ?BGP_UPDATE_ERR_AS_PATH};
-validate_as_path([{_Type, LocalASN} | _Rest], LocalASN) ->
+validate_as_path([{_Type, LocalAsn} | _Rest], LocalAsn) ->
   {error, ?BGP_UPDATE_ERR_LOOP};
-validate_as_path([{_Type, _ASN} | Rest], LocalASN) ->
-  validate_as_path(Rest, LocalASN).
+validate_as_path([{_Type, _Asn} | Rest], LocalAsn) ->
+  validate_as_path(Rest, LocalAsn).
 
 validate_mandatory_attrs(#bgp_update{path_attrs = PathAttrs}) ->
   check_mandatory_attrs(PathAttrs, [?BGP_PATH_ATTR_ORIGIN,

@@ -11,15 +11,15 @@
 % Message sending.
 %
 
--spec send_open(session()) -> ok.
+-spec send_open(#session{}) -> ok.
 send_open(#session{server     = Server,
-                   local_asn  = ASN,
+                   local_asn  = Asn,
                    hold_time  = HoldTime,
                    local_addr = LocalAddr}) ->
-  Msg = build_open(ASN, HoldTime, LocalAddr),
+  Msg = build_open(Asn, HoldTime, LocalAddr),
   send(Server, Msg).
 
--spec send_updates(session(), [pid()], dict(), prefix_list(), prefix_list()) ->
+-spec send_updates(#session{}, [pid()], dict(), [prefix()], [prefix()]) ->
         ok.
 send_updates(Session, Servers, Attrs, Added, Deleted) ->
   AttrsToSend = update_path_attrs(Session, Attrs),
@@ -28,20 +28,20 @@ send_updates(Session, Servers, Attrs, Added, Deleted) ->
   end, Servers),
   ok.
 
--spec send_updates(session(), [pid()], dict()) -> ok.
-send_updates(Session, Servers, Routes) ->
-  dict:fold(fun(#route{path_attrs = Attrs}, Prefixes, ok) ->
+-spec send_updates(#session{}, [pid()], dict()) -> ok.
+send_updates(Session, Servers, RouteAttrs) ->
+  dict:fold(fun(#route_attrs{path_attrs = Attrs}, Prefixes, ok) ->
     AttrsToSend = update_path_attrs(Session, Attrs),
     lists:foreach(fun(Server) ->
       send_update(Server, AttrsToSend, Prefixes, [])
     end, Servers)
-  end, ok, Routes).
+  end, ok, RouteAttrs).
 
--spec send_notification(session(), bgp_error()) -> ok.
+-spec send_notification(#session{}, bgp_error()) -> ok.
 send_notification(#session{server = Server}, Error) ->
   send(Server, build_notification(Error)).
 
--spec send_keepalive(session()) -> ok.
+-spec send_keepalive(#session{}) -> ok.
 send_keepalive(#session{server = Server}) ->
   send(Server, build_keepalive()).
 
@@ -59,15 +59,15 @@ build_header(MessageType, MessageLength) ->
   ?BGP_HEADER_PATTERN.
 
 -spec build_open(uint16(), uint16(), ipv4_address()) -> binary().
-build_open(ASN, HoldTime, LocalAddr) ->
+build_open(Asn, HoldTime, LocalAddr) ->
   Version = 4,
-  BGPId = rtm_util:ip_to_num(LocalAddr),
+  BgpId = rtm_util:ip_to_num(LocalAddr),
   OptParamsLen = 0, % TODO
   OptParams = <<>>,
   Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
   list_to_binary([build_header(?BGP_TYPE_OPEN, Len), ?BGP_OPEN_PATTERN]).
 
--spec build_update(bgp_path_attrs(), prefix_list(), prefix_list()) -> binary().
+-spec build_update(bgp_path_attrs(), [prefix()], [prefix()]) -> binary().
 build_update(Attrs, NewPrefixes, Withdrawn) ->
   PathAttrs = rtm_attr:attrs_to_binary(Attrs),
   TotalPathAttrLength = byte_size(PathAttrs),
@@ -110,15 +110,15 @@ build_prefixes(Prefixes) ->
 % LOCAL_PREF: propagate only to internal peers
 % ATOMIC_AGGREGATE: always propagate
 % TODO AGGREGATOR: propagate if doing aggregation
-update_path_attrs(#session{local_asn  = LocalASN,
-                           peer_asn   = PeerASN,
+update_path_attrs(#session{local_asn  = LocalAsn,
+                           peer_asn   = PeerAsn,
                            local_addr = LocalAddr}, PathAttrs) ->
-  UpdateAttrs = case LocalASN =:= PeerASN of
+  UpdateAttrs = case LocalAsn =:= PeerAsn of
     true ->
       fun rtm_attr:update_for_ibgp/3;
     false ->
       fun(TypeCode, Attr, Attrs) ->
-        rtm_attr:update_for_ebgp(TypeCode, Attr, Attrs, LocalASN, LocalAddr)
+        rtm_attr:update_for_ebgp(TypeCode, Attr, Attrs, LocalAsn, LocalAddr)
       end
   end,
   rtm_attr:fold(UpdateAttrs, PathAttrs, PathAttrs).

@@ -33,7 +33,7 @@
                | update_received
                | notification_received.
 
--type next_state(State) :: {next_state, State, session()}.
+-type next_state(State) :: {next_state, State, #session{}}.
 
 start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
@@ -43,7 +43,7 @@ init(#session{establishment = Estab} = Session) ->
     active ->
       trigger(self(), start),
       {ok, idle, Session};
-    {passive, _Port} ->
+    {passive, _Socket} ->
       {ok, idle, Session}
   end.
 
@@ -51,11 +51,11 @@ init(#session{establishment = Estab} = Session) ->
 % API
 %
 
-trigger(FSM, Event) ->
-  gen_fsm:send_event(FSM, Event).
+trigger(Fsm, Event) ->
+  gen_fsm:send_event(Fsm, Event).
 
-state(FSM) ->
-  gen_fsm:sync_send_all_state_event(FSM, state).
+state(Fsm) ->
+  gen_fsm:sync_send_all_state_event(Fsm, state).
 
 %
 % BGP FSM.
@@ -63,7 +63,7 @@ state(FSM) ->
 
 % Idle state.
 
--spec idle(event(), session()) -> next_state(idle | connect).
+-spec idle(event(), #session{}) -> next_state(idle | connect).
 
 idle(start, #session{establishment = Estab} = Session) ->
   ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
@@ -89,7 +89,7 @@ idle(_Error, Session) ->
 
 % Connect state.
 
--spec connect(event(), session()) ->
+-spec connect(event(), #session{}) ->
         next_state(idle | connect | active | open_sent).
 
 connect(start, Session) ->
@@ -121,7 +121,7 @@ connect(_Event, Session) ->
 
 % Active state.
 
--spec active(event(), session()) ->
+-spec active(event(), #session{}) ->
         next_state(idle | connect | active | open_sent).
 
 active(start, Session) ->
@@ -144,17 +144,17 @@ active(tcp_open, Session) ->
   end;
 
 active({open_received, Bin, Marker},
-       #session{peer_asn = PeerASN, peer_addr = PeerAddr} = Session) ->
+       #session{peer_asn = PeerAsn, peer_addr = PeerAddr} = Session) ->
   error_logger:info_msg("FSM:active/open_received~n"),
   clear_timer(Session#session.conn_retry_timer),
-  case rtm_parser:parse_open(Bin, Marker, PeerASN, PeerAddr) of
-    {ok, #bgp_open{asn = ASN, bgp_id = BGPId, hold_time = HoldTime}} ->
+  case rtm_parser:parse_open(Bin, Marker, PeerAsn, PeerAddr) of
+    {ok, #bgp_open{asn = Asn, bgp_id = BgpId, hold_time = HoldTime}} ->
       rtm_msg:send_open(Session),
       rtm_msg:send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
-      {next_state, open_confirm, NewSession#session{peer_asn    = ASN,
-                                                    peer_bgp_id = BGPId}};
+      {next_state, open_confirm, NewSession#session{peer_asn    = Asn,
+                                                    peer_bgp_id = BgpId}};
     {error, Error} ->
       log_error(Error),
       rtm_msg:send_notification(Session, Error),
@@ -174,7 +174,7 @@ active(_Event, Session) ->
 
 % OpenSent state
 
--spec open_sent(event(), session()) ->
+-spec open_sent(event(), #session{}) ->
         next_state(idle | active | open_sent | open_confirm).
 
 open_sent(start, Session) ->
@@ -187,15 +187,15 @@ open_sent(stop, Session) ->
   {stop, normal, Session};
 
 open_sent({open_received, Bin, Marker},
-          #session{peer_asn = PeerASN, peer_addr = PeerAddr} = Session) ->
+          #session{peer_asn = PeerAsn, peer_addr = PeerAddr} = Session) ->
   error_logger:info_msg("FSM:open_sent/open_received~n"),
-  case rtm_parser:parse_open(Bin, Marker, PeerASN, PeerAddr) of
-    {ok, #bgp_open{asn = ASN, bgp_id = BGPId, hold_time = HoldTime}} ->
+  case rtm_parser:parse_open(Bin, Marker, PeerAsn, PeerAddr) of
+    {ok, #bgp_open{asn = Asn, bgp_id = BgpId, hold_time = HoldTime}} ->
       rtm_msg:send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),
       NewSession = start_timers(Session, NewHoldTime),
-      {next_state, open_confirm, NewSession#session{peer_asn    = ASN,
-                                                    peer_bgp_id = BGPId}};
+      {next_state, open_confirm, NewSession#session{peer_asn    = Asn,
+                                                    peer_bgp_id = BgpId}};
     {error, Error} ->
       log_error(Error),
       rtm_msg:send_notification(Session, Error),
@@ -224,7 +224,7 @@ open_sent(_Event, Session) ->
 
 % OpenConfirm state.
 
--spec open_confirm(event(), session()) ->
+-spec open_confirm(event(), #session{}) ->
         next_state(idle | open_confirm | established).
 
 open_confirm(start, Session) ->
@@ -276,7 +276,7 @@ open_confirm(_Event, Session) ->
 
 % Established state.
 
--spec established(event(), session()) -> next_state(idle | established).
+-spec established(event(), #session{}) -> next_state(idle | established).
 
 established(start, Session) ->
   error_logger:info_msg("FSM:established/start~n"),
@@ -288,11 +288,11 @@ established(stop, Session) ->
   {stop, stop, Session};
 
 established({update_received, Bin, Len},
-            #session{local_asn = LocalASN} = Session) ->
+            #session{local_asn = LocalAsn} = Session) ->
   error_logger:info_msg("FSM:established/update_received~n"),
   Hold = restart_timer(hold, Session),
   NewSession = Session#session{hold_timer = Hold},
-  case rtm_parser:parse_update(Bin, Len, LocalASN) of
+  case rtm_parser:parse_update(Bin, Len, LocalAsn) of
     {ok, Msg} ->
       update_rib(Session, Msg),
       {next_state, established, NewSession};
@@ -451,21 +451,21 @@ log_error({Code, SubCode, Data}) ->
 % can be asynchronous.
 %
 
-update_rib(#session{peer_bgp_id = PeerBGPId,
+update_rib(#session{peer_bgp_id = PeerBgpId,
                     peer_addr   = PeerAddr} = Session,
            #bgp_update{path_attrs       = PathAttrs,
                        withdrawn_routes = Withdrawn,
                        nlri             = NLRI}) ->
-  Route = #route{
+  RouteAttrs = #route_attrs{
     active     = false,
     next_hop   = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
     path_attrs = PathAttrs,
     ebgp       = is_ebgp(Session),
-    bgp_id     = PeerBGPId,
+    bgp_id     = PeerBgpId,
     peer_addr  = PeerAddr,
     fsm        = self()
   },
-  {Added, Deleted, Replacements} = rtm_rib:update(Route, NLRI, Withdrawn),
+  {Added, Deleted, Replacements} = rtm_rib:update(RouteAttrs, NLRI, Withdrawn),
   redistribute_routes(Session, PathAttrs, Added, Deleted, Replacements).
 
 redistribute_routes(#session{server = Originator} = Session, Attrs,
@@ -481,13 +481,13 @@ redistribute_routes(#session{server = Originator} = Session, Attrs,
 distribute_installed_routes(#session{server = Server} = Session) ->
   rtm_msg:send_updates(Session, [Server], rtm_rib:best_routes()).
 
-is_ebgp(#session{local_asn = LocalASN, peer_asn = PeerASN}) ->
-  LocalASN =/= PeerASN.
+is_ebgp(#session{local_asn = LocalAsn, peer_asn = PeerAsn}) ->
+  LocalAsn =/= PeerAsn.
 
-join_established_group(#session{local_asn = LocalASN,
-                                peer_asn  = PeerASN,
+join_established_group(#session{local_asn = LocalAsn,
+                                peer_asn  = PeerAsn,
                                 server = Server}) ->
-  Group = case LocalASN =:= PeerASN of
+  Group = case LocalAsn =:= PeerAsn of
     true  -> established_ibgp;
     false -> established_ebgp
   end,

@@ -7,8 +7,8 @@
 start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, ok).
 
-start_child(FSM) ->
-  supervisor:start_child(?MODULE, [FSM]).
+start_child(Fsm) ->
+  supervisor:start_child(?MODULE, [Fsm]).
 
 init(ok) ->
   % Process groups for sessions in the 'established' state.

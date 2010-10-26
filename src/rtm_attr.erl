@@ -50,10 +50,10 @@ to_binary(#bgp_path_attr{optional   = Optional,
 -spec update_for_ebgp(bgp_path_attr_type_code(), #bgp_path_attr{},
                       bgp_path_attrs(), uint16(), ipv4_address()) ->
         bgp_path_attrs().
-update_for_ebgp(TypeCode, Attr, PathAttrs, ASN, Addr) ->
+update_for_ebgp(TypeCode, Attr, PathAttrs, Asn, Addr) ->
   case TypeCode of
     ?BGP_PATH_ATTR_AS_PATH ->
-      NewASPath = prepend_asn(ASN, Attr),
+      NewASPath = prepend_asn(Asn, Attr),
       dict:store(?BGP_PATH_ATTR_AS_PATH, [NewASPath], PathAttrs);
     ?BGP_PATH_ATTR_NEXT_HOP ->
       NewNextHop = next_hop(Addr),
@@ -98,16 +98,16 @@ next_hop(Addr) ->
   Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
   build(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
 
-prepend_asn(ASN, #bgp_path_attr{extended  = Extended,
+prepend_asn(Asn, #bgp_path_attr{extended  = Extended,
                                 type_code = ?BGP_PATH_ATTR_AS_PATH,
                                 raw_value = Path} = ASPath) ->
   NewPath = case Path of
-    << ?BGP_AS_PATH_SEQUENCE:8, N:8, FirstASN:16, Rest/binary >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, (N+1):8, ASN:16, FirstASN:16, Rest/binary >>;
+    << ?BGP_AS_PATH_SEQUENCE:8, N:8, FirstAsn:16, Rest/binary >> ->
+      << ?BGP_AS_PATH_SEQUENCE:8, (N+1):8, Asn:16, FirstAsn:16, Rest/binary >>;
     << ?BGP_AS_PATH_SET:8, _Rest/binary >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16, Path/binary >>;
+      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, Asn:16, Path/binary >>;
     << >> ->
-      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, ASN:16 >>
+      << ?BGP_AS_PATH_SEQUENCE:8, 1:8, Asn:16 >>
   end,
   Length = byte_size(NewPath),
   ASPath#bgp_path_attr{

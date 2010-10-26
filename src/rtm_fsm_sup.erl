@@ -13,11 +13,11 @@ start_child(Session) ->
   Spec = build_spec(Session),
   supervisor:start_child(?MODULE, Spec).
 
-terminate_child(Id) ->
-  supervisor:terminate_child(?MODULE, Id).
+terminate_child(Pid) ->
+  supervisor:terminate_child(?MODULE, Pid).
 
-delete_child(Id) ->
-  supervisor:delete_child(?MODULE, Id).
+delete_child(Pid) ->
+  supervisor:delete_child(?MODULE, Pid).
 
 init(ActiveSessions) ->
   FsmSpecs = dict:fold(fun(_IP, Session, Specs) ->

@@ -11,7 +11,7 @@ parse(File) ->
   {ok, Conf} = file:consult(File),
   Conf.
 
--spec peers(conf()) -> [session()].
+-spec peers(conf()) -> [#session{}].
 peers(Conf) ->
   {local, Local} = get(local, Conf),
   Peers = get_all(peer, Conf),

@@ -29,12 +29,12 @@ start_link() ->
 best_routes() ->
   gen_server:call(?MODULE, best_routes).
 
--spec update(route(), prefix_list(), prefix_list()) ->
-        {prefix_list(), prefix_list(), rib()}.
-update(Route, NLRI, Withdrawn) ->
-  gen_server:call(?MODULE, {update, Route, NLRI, Withdrawn}).
+-spec update(#route_attrs{}, [prefix()], [prefix()]) ->
+        {[prefix()], [prefix()], rib()}.
+update(RouteAttrs, NLRI, Withdrawn) ->
+  gen_server:call(?MODULE, {update, RouteAttrs, NLRI, Withdrawn}).
 
--spec remove_prefixes() -> prefix_list().
+-spec remove_prefixes() -> [prefix()].
 remove_prefixes() ->
   gen_server:call(?MODULE, remove_prefixes).
 
@@ -48,29 +48,29 @@ init(ok) ->
   register(?MODULE, self()),
   {ok, #state{rib = dict:new()}}.
 
-handle_call(best_routes, _From, #state{rib = RIB} = State) ->
-  Routes = dict:fold(fun({Prefix, Len}, Entries, Best) ->
-    case Entries of
-      [Route | _Rest] -> dict:append(Route, {Prefix, Len}, Best);
+handle_call(best_routes, _From, #state{rib = Rib} = State) ->
+  RouteAttrs = dict:fold(fun(Prefix, RouteAttrsList, Best) ->
+    case RouteAttrsList of
+      [BestAttrs | _Rest] -> dict:append(BestAttrs, Prefix, Best);
       [] -> Best
     end
-  end, dict:new(), RIB),
-  {reply, Routes, State};
+  end, dict:new(), Rib),
+  {reply, RouteAttrs, State};
 
-handle_call({update, Route, NLRI, Withdrawn}, {FSM, _Tag},
-            #state{rib = RIB} = State) ->
-  {Added, TmpRIB} = add_prefixes(RIB, Route, NLRI),
-  {Deleted, Replacements, NewRIB} = del_prefixes(TmpRIB, Withdrawn, FSM),
-  {reply, {Added, Deleted, Replacements}, State#state{rib = NewRIB}};
+handle_call({update, RouteAttrs, NLRI, Withdrawn}, {Fsm, _Tag},
+            #state{rib = Rib} = State) ->
+  {Added, TmpRib} = add_prefixes(Rib, RouteAttrs, NLRI),
+  {Deleted, Replacements, NewRib} = del_prefixes(TmpRib, Withdrawn, Fsm),
+  {reply, {Added, Deleted, Replacements}, State#state{rib = NewRib}};
 
-handle_call(remove_prefixes, {FSM, _Tag}, #state{rib = RIB} = State) ->
-  {Removed, NewRIB} = lists:foldl(fun({Pref, Len}, {AccRemoved, AccRIB}) ->
-    case del_prefixes(AccRIB, [{Pref, Len}], FSM) of
-      {[Deleted], _, NewAccRIB} -> {[Deleted | AccRemoved], NewAccRIB};
-      {[], _, NewAccRIB}        -> {AccRemoved, NewAccRIB}
+handle_call(remove_prefixes, {Fsm, _Tag}, #state{rib = Rib} = State) ->
+  {Removed, NewRib} = lists:foldl(fun(Prefix, {AccRemoved, AccRib}) ->
+    case del_prefixes(AccRib, [Prefix], Fsm) of
+      {[Deleted], _, NewAccRib} -> {[Deleted | AccRemoved], NewAccRib};
+      {[], _, NewAccRib}        -> {AccRemoved, NewAccRib}
     end
-  end, {[], RIB}, dict:fetch_keys(RIB)),
-  {reply, Removed, State#state{rib = NewRIB}}.
+  end, {[], Rib}, dict:fetch_keys(Rib)),
+  {reply, Removed, State#state{rib = NewRib}}.
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
@@ -88,149 +88,148 @@ handle_info({'EXIT', _Port, Error}, State) ->
   error_logger:error_msg("RTM port died with error ~p~n", [Error]),
   {noreply, State}.
 
-terminate(_Reason, #state{rib = RIB}) ->
-  clear_loc_rib(RIB),
+terminate(_Reason, #state{rib = Rib}) ->
+  clear_loc_rib(Rib),
   ok.
 
 %
 % Internal functions.
 %
 
--spec del_prefixes(rib(), prefix_list(), pid()) ->
-        {prefix_list(), dict(), rib()}.
-del_prefixes(RIB, Prefixes, FSM) ->
-  lists:foldl(fun({Pref, Len}, {Deleted, Replacements, AccRIB}) ->
-    case remove_entry({Pref, Len}, AccRIB, FSM) of
-      {inactive, NewAccRIB} ->
-        {Deleted, Replacements, NewAccRIB};
-      {replaced, Route, NewAccRIB} ->
-        {Deleted, dict:append(Route, {Pref, Len}, Replacements), NewAccRIB};
-      {unfeasible, {Pref, Len}, NewAccRIB} ->
-        {[{Pref, Len} | Deleted], Replacements, NewAccRIB}
+-spec del_prefixes(rib(), [prefix()], pid()) -> {[prefix()], dict(), rib()}.
+del_prefixes(Rib, Prefixes, Fsm) ->
+  lists:foldl(fun(Prefix, {Deleted, Replacements, AccRib}) ->
+    case remove_entry(Prefix, AccRib, Fsm) of
+      {inactive, NewAccRib} ->
+        {Deleted, Replacements, NewAccRib};
+      {replaced, RouteAttrs, NewAccRib} ->
+        {Deleted, dict:append(RouteAttrs, Prefix, Replacements), NewAccRib};
+      {unfeasible, Prefix, NewAccRib} ->
+        {[Prefix | Deleted], Replacements, NewAccRib}
     end
-  end, {[], dict:new(), RIB}, Prefixes).
+  end, {[], dict:new(), Rib}, Prefixes).
 
--spec remove_entry({prefix(), prefix_len()}, rib(), pid()) ->
-          {replaced, route(), rib()}
-        | {unfeasible, {prefix(), prefix_len()}, rib()}
-        | {inactive, rib()}.
-remove_entry({Prefix, Len}, RIB, FSM) ->
-  case dict:find({Prefix, Len}, RIB) of
-    {ok, Entries} ->
-      FromFSM = fun(#route{fsm = Owner}) -> Owner =:= FSM end,
-      {Removed, Remaining} = lists:partition(FromFSM, Entries),
-      NewRIB = dict:store({Prefix, Len}, Remaining, RIB),
-      case del_routes(Prefix, Len, Removed) of
+-spec remove_entry(prefix(), rib(), pid()) ->
+        {replaced, #route_attrs{}, rib()} | {unfeasible, prefix(), rib()} |
+        {inactive, rib()}.
+remove_entry(Prefix, Rib, Fsm) ->
+  case dict:find(Prefix, Rib) of
+    {ok, RouteAttrsList} ->
+      FromFsm = fun(#route_attrs{fsm = Owner}) -> Owner =:= Fsm end,
+      {Removed, Remaining} = lists:partition(FromFsm, RouteAttrsList),
+      NewRib = dict:store(Prefix, Remaining, Rib),
+      case del_routes(Prefix, Removed) of
         true ->
-          case add_next_best(Prefix, Len, Remaining) of
+          case add_next_best(Prefix, Remaining) of
             not_found   ->
-              {unfeasible, {Prefix, Len}, dict:erase({Prefix, Len}, NewRIB)};
-            {ok, Route} ->
-              {replaced, Route, NewRIB}
+              {unfeasible, Prefix, dict:erase(Prefix, NewRib)};
+            {ok, RouteAttrs} ->
+              {replaced, RouteAttrs, NewRib}
           end;
         false ->
-          {inactive, NewRIB}
+          {inactive, NewRib}
       end;
     error ->
       error_logger:error_msg("Tried to remove nonexistant route~n"),
-      {inactive, RIB}
+      {inactive, Rib}
   end.
 
--spec del_routes(prefix(), prefix_len(), [route()]) -> boolean().
-del_routes(Prefix, Len, Routes) ->
-  del_routes(Prefix, Len, Routes, false).
+-spec del_routes(prefix(), [#route_attrs{}]) -> boolean().
+del_routes(Prefix, RouteAttrsList) ->
+  del_routes(Prefix, RouteAttrsList, false).
 
-del_routes(_Prefix, _Len, [], Removed) ->
+del_routes(_Prefix, [], Removed) ->
   Removed;
-del_routes(Prefix, Len, [#route{next_hop = NextHop, active = Active} | Rs],
+del_routes(Prefix, [#route_attrs{next_hop = NextHop, active = Active} | Rest],
            Removed) ->
   case Active of
     true ->
-      del_route(Prefix, Len, NextHop),
-      del_routes(Prefix, Len, Rs, true);
+      del_route(Prefix, NextHop),
+      del_routes(Prefix, Rest, true);
     false ->
-      del_routes(Prefix, Len, Rs, Removed)
+      del_routes(Prefix, Rest, Removed)
   end.
 
--spec add_next_best(prefix(), prefix_len(), [route()]) ->
-        {ok, route()} | not_found.
-add_next_best(_Prefix, _Len, []) ->
+-spec add_next_best(prefix(), [#route_attrs{}]) ->
+        {ok, #route_attrs{}} | not_found.
+add_next_best(_Prefix, []) ->
   not_found;
-add_next_best(Prefix, Len,
-              [#route{next_hop = NextHop, active = false} = Route | _]) ->
-  add_route(Prefix, Len, NextHop),
-  {ok, Route}.
+add_next_best(Prefix, [#route_attrs{next_hop = NextHop,
+                                    active   = false} = RouteAttrs | _]) ->
+  add_route(Prefix, NextHop),
+  {ok, RouteAttrs}.
 
--spec add_prefixes(rib(), route(), prefix_list()) -> {prefix_list(), rib()}.
-add_prefixes(RIB, #route{next_hop = NextHop} = Route, Prefixes) ->
-  InsertPrefix = fun({Pref, Len}, {Added, AccRIB}) ->
-    case dict:find({Pref, Len}, AccRIB) of
-      {ok, Entries} ->
-        case insert_route(Entries, Pref, Len, Route) of
-          {active, NewEntries} ->
-            NewRIB = dict:store({Pref, Len}, NewEntries, AccRIB),
-            {[{Pref, Len} | Added], NewRIB};
-          {inactive, NewEntries} ->
-            NewRIB = dict:store({Pref, Len}, NewEntries, AccRIB),
-            {Added, NewRIB}
+-spec add_prefixes(rib(), #route_attrs{}, [prefix()]) -> {[prefix()], rib()}.
+add_prefixes(Rib, #route_attrs{next_hop = NextHop} = RouteAttrs, Prefixes) ->
+  InsertPrefix = fun(Prefix, {Added, AccRib}) ->
+    case dict:find(Prefix, AccRib) of
+      {ok, RouteAttrsList} ->
+        case insert_route(Prefix, RouteAttrs, RouteAttrsList) of
+          {active, NewRouteAttrsList} ->
+            NewRib = dict:store(Prefix, NewRouteAttrsList, AccRib),
+            {[Prefix | Added], NewRib};
+          {inactive, NewRouteAttrsList} ->
+            NewRib = dict:store(Prefix, NewRouteAttrsList, AccRib),
+            {Added, NewRib}
         end;
       error ->
-        add_route(Pref, Len, NextHop),
-        NewRIB = dict:store({Pref, Len}, [Route#route{active = true}], AccRIB),
-        {[{Pref, Len} | Added], NewRIB}
+        add_route(Prefix, NextHop),
+        NewRouteAttrs = RouteAttrs#route_attrs{active = true},
+        NewRib = dict:store(Prefix, [NewRouteAttrs], AccRib),
+        {[Prefix | Added], NewRib}
     end
   end,
-  lists:foldl(InsertPrefix, {[], RIB}, Prefixes).
+  lists:foldl(InsertPrefix, {[], Rib}, Prefixes).
 
--spec insert_route([route()], prefix(), prefix_len(), route()) ->
-        {active | inactive, [route()]}.
-insert_route(Entries, Prefix, Len, Route) ->
-  insert_route(Entries, Prefix, Len, Route, true).
+-spec insert_route(prefix(), #route_attrs{}, [#route_attrs{}]) ->
+        {active | inactive, [#route_attrs{}]}.
+insert_route(Prefix, RouteAttrs, RouteAttrsList) ->
+  insert_route(Prefix, RouteAttrs, RouteAttrsList, true).
 
-insert_route([], _Prefix, _Len, NewRoute, false) ->
-  {inactive, [NewRoute]};
-insert_route([], Prefix, Len, #route{next_hop = NextHop} = NewRoute, true) ->
-  add_route(Prefix, Len, NextHop),
-  {active, [NewRoute#route{active = true}]};
-insert_route([#route{next_hop = NextHop} = Route | OtherRoutes],
-             Prefix, Len, #route{next_hop = NewNextHop} = NewRoute, First) ->
-  case preference_cmp(NewRoute, Route) of
+insert_route(_Prefix, NewRouteAttrs, [], false) ->
+  {inactive, [NewRouteAttrs]};
+insert_route(Prefix, #route_attrs{next_hop = NextHop} = NewRouteAttrs, [],
+             true) ->
+  add_route(Prefix, NextHop),
+  {active, [NewRouteAttrs#route_attrs{active = true}]};
+insert_route(Prefix, #route_attrs{next_hop = NewNextHop} = NewRouteAttrs,
+             [#route_attrs{next_hop = NextHop} = RouteAttrs | Rest], First) ->
+  case preference_cmp(NewRouteAttrs, RouteAttrs) of
     gt ->
       Active = case First of
         true ->
-          del_route(Prefix, Len, NextHop),
-          add_route(Prefix, Len, NewNextHop),
+          del_route(Prefix, NextHop),
+          add_route(Prefix, NewNextHop),
           true;
         false ->
           false
       end,
-      ActiveRoute = NewRoute#route{active = Active},
-      InactiveRoute = Route#route{active = false},
-      {active, [ActiveRoute | [InactiveRoute | OtherRoutes]]};
+      ActRouteAttrs  = NewRouteAttrs#route_attrs{active = Active},
+      InactRoutAttrs = RouteAttrs#route_attrs{active = false},
+      {active, [ActRouteAttrs | [InactRoutAttrs | Rest]]};
     lt ->
-      {inactive, NewOtherRoutes} = insert_route(OtherRoutes, Prefix, Len,
-                                                NewRoute, false),
-      {inactive, [Route | NewOtherRoutes]}
+      {inactive, NewRest} = insert_route(Prefix, NewRouteAttrs, Rest, false),
+      {inactive, [RouteAttrs | NewRest]}
   end.
 
-clear_loc_rib(RIB) ->
-  lists:foreach(fun({{Prefix, Length}, Routes}) ->
-    lists:foreach(fun(#route{next_hop = NextHop}) ->
-      del_route(Prefix, Length, NextHop)
-    end, Routes)
-  end, dict:to_list(RIB)).
+clear_loc_rib(Rib) ->
+  lists:foreach(fun({Prefix, RouteAttrsList}) ->
+    lists:foreach(fun(#route_attrs{next_hop = NextHop}) ->
+      del_route(Prefix, NextHop)
+    end, RouteAttrsList)
+  end, dict:to_list(Rib)).
 
-add_route(Pref, Len, GW) ->
-  io:format("Adding route ~p/~p via ~p~n", [Pref, Len, GW]),
-  modify_route("add", Pref, Len, GW).
+add_route(Prefix, NextHop) ->
+  io:format("Adding route: ~p via ~p~n", [Prefix, NextHop]),
+  modify_route("add", Prefix, NextHop).
 
-del_route(Pref, Len, GW) ->
-  io:format("Deleting route ~p/~p via ~p~n", [Pref, Len, GW]),
-  modify_route("del", Pref, Len, GW).
+del_route(Prefix, NextHop) ->
+  io:format("Deleting route: ~p via ~p~n", [Prefix, NextHop]),
+  modify_route("del", Prefix, NextHop).
 
-modify_route(Cmd, Pref, Len, GW) ->
+modify_route(Cmd, {Pref, Len}, NextHop) ->
   Dst = Pref bsl (32 - Len),
-  run_rtm(Cmd, Len, Dst, GW).
+  run_rtm(Cmd, Len, Dst, NextHop).
 
 run_rtm(Cmd, Len, Dst, GW) ->
   Args = [Cmd, integer_to_list(Len), integer_to_list(Dst), integer_to_list(GW)],
@@ -239,8 +238,8 @@ run_rtm(Cmd, Len, Dst, GW) ->
                    [stream, {args, Args}]),
   erlang:port_close(Port).
 
-preference_cmp(#route{active = true} = Route1,
-               #route{active = true} = Route2) ->
+preference_cmp(#route_attrs{active = true} = RouteAttrs1,
+               #route_attrs{active = true} = RouteAttrs2) ->
   % TODO check reachability
   Attributes = [
     fun local_pref/2,
@@ -252,51 +251,51 @@ preference_cmp(#route{active = true} = Route1,
     fun bgp_id/2,
     fun peer_addr/2
   ],
-  compare_in_order(Attributes, Route1, Route2).
+  compare_in_order(Attributes, RouteAttrs1, RouteAttrs2).
 
-compare_in_order([Fun | Rest], Route1, Route2) ->
-  case Fun(Route1, Route2) of
+compare_in_order([Fun | Rest], RouteAttrs1, RouteAttrs2) ->
+  case Fun(RouteAttrs1, RouteAttrs2) of
     X when X > 0 -> gt;
     X when X < 0 -> lt;
-    0 -> compare_in_order(Rest, Route1, Route2)
+    0 -> compare_in_order(Rest, RouteAttrs1, RouteAttrs2)
   end.
 
-local_pref(Route1, Route2) ->
-  sub_attrs(?BGP_PATH_ATTR_LOCAL_PREF, Route1, Route2).
+local_pref(RouteAttrs1, RouteAttrs2) ->
+  sub_attrs(?BGP_PATH_ATTR_LOCAL_PREF, RouteAttrs1, RouteAttrs2).
 
-as_path_len(Route1, Route2) ->
-  ASPath1 = attr_value(?BGP_PATH_ATTR_AS_PATH, Route1),
-  ASPath2 = attr_value(?BGP_PATH_ATTR_AS_PATH, Route2),
+as_path_len(RouteAttrs1, RouteAttrs2) ->
+  ASPath1 = attr_value(?BGP_PATH_ATTR_AS_PATH, RouteAttrs1),
+  ASPath2 = attr_value(?BGP_PATH_ATTR_AS_PATH, RouteAttrs2),
   byte_size(ASPath2) - byte_size(ASPath1).
 
-origin(Route1, Route2) ->
-  sub_attrs(?BGP_PATH_ATTR_ORIGIN, Route2, Route1).
+origin(RouteAttrs1, RouteAttrs2) ->
+  sub_attrs(?BGP_PATH_ATTR_ORIGIN, RouteAttrs2, RouteAttrs1).
 
-med(Route1, Route2) ->
-  ASPath1 = attr_value(?BGP_PATH_ATTR_AS_PATH, Route1),
-  ASPath2 = attr_value(?BGP_PATH_ATTR_AS_PATH, Route2),
+med(RouteAttrs1, RouteAttrs2) ->
+  ASPath1 = attr_value(?BGP_PATH_ATTR_AS_PATH, RouteAttrs1),
+  ASPath2 = attr_value(?BGP_PATH_ATTR_AS_PATH, RouteAttrs2),
   case neighbor(ASPath1) =:= neighbor(ASPath2) of
-    true  -> sub_attrs(?BGP_PATH_ATTR_MED, Route2, Route1);
+    true  -> sub_attrs(?BGP_PATH_ATTR_MED, RouteAttrs2, RouteAttrs1);
     false -> 0
   end.
 
-ebgp(#route{ebgp = true}, #route{ebgp = false}) ->  1;
-ebgp(#route{ebgp = false}, #route{ebgp = true}) -> -1;
-ebgp(#route{}, #route{}) -> 0.
+ebgp(#route_attrs{ebgp = true}, #route_attrs{ebgp = false}) ->  1;
+ebgp(#route_attrs{ebgp = false}, #route_attrs{ebgp = true}) -> -1;
+ebgp(#route_attrs{}, #route_attrs{}) -> 0.
 
-bgp_id(#route{bgp_id = BGPId1}, #route{bgp_id = BGPId2}) ->
-  tuple_cmp(BGPId2, BGPId1).
+bgp_id(#route_attrs{bgp_id = BgpId}, #route_attrs{bgp_id = BgpId}) ->
+  tuple_cmp(BgpId, BgpId).
 
-peer_addr(#route{peer_addr = PeerAddr1}, #route{peer_addr = PeerAddr2}) ->
-  tuple_cmp(PeerAddr2, PeerAddr1).
+peer_addr(#route_attrs{peer_addr = Addr1}, #route_attrs{peer_addr = Addr2}) ->
+  tuple_cmp(Addr2, Addr1).
 
 neighbor([]) -> 0;
-neighbor([ASN | _Rest]) -> ASN.
+neighbor([Asn | _Rest]) -> Asn.
 
-sub_attrs(Attr, Route1, Route2) ->
-  attr_value(Attr, Route1) - attr_value(Attr, Route2).
+sub_attrs(Attr, RouteAttrs1, RouteAttrs2) ->
+  attr_value(Attr, RouteAttrs1) - attr_value(Attr, RouteAttrs2).
 
-attr_value(Attr, #route{path_attrs = PathAttrs}) ->
+attr_value(Attr, #route_attrs{path_attrs = PathAttrs}) ->
   case dict:find(Attr, PathAttrs) of
     {ok, [Value]} -> Value;
     error         -> default_attr_value(Attr)

@@ -21,23 +21,23 @@ parse_header(?BGP_HEADER_PATTERN) ->
 
 -spec parse_open(binary(), non_neg_integer(), uint16(), ipv4_address()) ->
         {ok, #bgp_open{}} | {error, bgp_error()}.
-parse_open(?BGP_OPEN_PATTERN, Marker, ConfigASN, ConfigID) ->
+parse_open(?BGP_OPEN_PATTERN, Marker, ConfigAsn, ConfigId) ->
   Msg = #bgp_open{
     version        = Version,
-    asn            = ASN,
+    asn            = Asn,
     hold_time      = HoldTime,
-    bgp_id         = rtm_util:num_to_ip(BGPId),
+    bgp_id         = rtm_util:num_to_ip(BgpId),
     opt_params_len = OptParamsLen,
     opt_params     = parse_opt_params(OptParams)
   },
-  case rtm_validate:open(Msg, Marker, ConfigASN, ConfigID) of
+  case rtm_validate:open(Msg, Marker, ConfigAsn, ConfigId) of
     ok    -> {ok, Msg};
     Error -> Error
   end.
 
 -spec parse_update(binary(), uint16(), uint16()) -> {ok, #bgp_update{}}
                                                   | {error, bgp_error()}.
-parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
+parse_update(?BGP_UPDATE_PATTERN, Len, LocalAsn) ->
   Msg = #bgp_update{
     unfeasible_len   = UnfeasableLength,
     attrs_len        = TotalPathAttrLength,
@@ -45,7 +45,7 @@ parse_update(?BGP_UPDATE_PATTERN, Len, LocalASN) ->
     path_attrs       = parse_path_attrs(PathAttrs),
     nlri             = parse_prefixes(NLRI)
   },
-  case rtm_validate:update(Msg, Len, LocalASN) of
+  case rtm_validate:update(Msg, Len, LocalAsn) of
     ok    -> {ok, Msg};
     Error -> Error
   end.
@@ -120,13 +120,13 @@ parse_attr_value(?BGP_PATH_ATTR_LOCAL_PREF, <<LocalPref:32>>) ->
 parse_attr_value(?BGP_PATH_ATTR_ATOMIC_AGGR, <<>>) ->
   ok;
 
-parse_attr_value(?BGP_PATH_ATTR_AGGREGATOR, <<ASN:16, BGPId:32>>) ->
-  {ASN, rtm_util:num_to_ip(BGPId)}.
+parse_attr_value(?BGP_PATH_ATTR_AGGREGATOR, <<Asn:16, BgpId:32>>) ->
+  {Asn, rtm_util:num_to_ip(BgpId)}.
 
 parse_as_path(<<>>) ->
   [];
 parse_as_path(?BGP_PATH_ATTR_AS_PATH_PATTERN) ->
-  [{PathType, PathASNs} | parse_as_path(OtherPaths)].
+  [{PathType, PathAsns} | parse_as_path(OtherPaths)].
 
 parse_prefixes(Prefixes) ->
   parse_prefixes(Prefixes, []).

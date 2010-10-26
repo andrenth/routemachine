@@ -112,9 +112,9 @@
 -record(bgp_update,{
   unfeasible_len   :: uint16(),
   attrs_len        :: uint16(),
-  withdrawn_routes :: prefix_list(),
+  withdrawn_routes :: [prefix()],
   path_attrs       :: bgp_path_attrs(),
-  nlri             :: prefix_list()
+  nlri             :: [prefix()]
 }).
 
 -record(bgp_path_attr, {
@@ -145,9 +145,9 @@
 
 -define(BGP_OPEN_PATTERN,
   << Version      : 8,
-     ASN          : 16,
+     Asn          : 16,
      HoldTime     : 16,
-     BGPId        : 32,
+     BgpId        : 32,
      OptParamsLen : 8,
      OptParams    : OptParamsLen/binary >>).
 
@@ -186,7 +186,7 @@
 -define(BGP_PATH_ATTR_AS_PATH_PATTERN,
   << PathType   : 8,
      PathLength : 8,
-     PathASNs   : PathLength/binary-unit:16,
+     PathAsns   : PathLength/binary-unit:16,
      OtherPaths/binary >>).
 
 -define(BGP_PREFIX_PATTERN,

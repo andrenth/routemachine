@@ -22,8 +22,8 @@
   fsm       :: pid()
 }).
 
-start_link(FSM) ->
-  gen_server:start_link(?MODULE, FSM, []).
+start_link(Fsm) ->
+  gen_server:start_link(?MODULE, Fsm, []).
 
 %
 % API.
@@ -45,10 +45,10 @@ peer_addr(Server) ->
 % Callbacks for gen_server.
 %
 
-init(FSM) ->
+init(Fsm) ->
   error_logger:info_msg("Starting server ~w~n", [self()]),
   process_flag(trap_exit, true),
-  State = #state{data = <<>>, data_proc = fun process_header/1, fsm = FSM},
+  State = #state{data = <<>>, data_proc = fun process_header/1, fsm = Fsm},
   {ok, State}.
 
 handle_info({tcp, Socket, Bin},
@@ -57,12 +57,12 @@ handle_info({tcp, Socket, Bin},
   NewState = State#state{socket = Socket, data = list_to_binary([Data, Bin])},
   {noreply, Proc(NewState)};
 
-handle_info({tcp_closed, _Socket}, #state{fsm = FSM} = State) ->
-  rtm_fsm:trigger(FSM, tcp_closed),
+handle_info({tcp_closed, _Socket}, #state{fsm = Fsm} = State) ->
+  rtm_fsm:trigger(Fsm, tcp_closed),
   {stop, normal, State#state{socket = undefined}};
 
-handle_info({tcp_error, _Socket}, #state{fsm = FSM} = State) ->
-  rtm_fsm:trigger(FSM, tcp_fatal),
+handle_info({tcp_error, _Socket}, #state{fsm = Fsm} = State) ->
+  rtm_fsm:trigger(Fsm, tcp_fatal),
   {stop, normal, State#state{socket = undefined}}.
 
 handle_call(peername, _From, #state{socket = Socket} = State) ->
@@ -123,11 +123,11 @@ process_message(#state{data     = Data,
                        msg_type = Type,
                        msg_len  = Len,
                        marker   = Marker,
-                       fsm      = FSM} = State) when byte_size(Data) >= Len ->
+                       fsm      = Fsm} = State) when byte_size(Data) >= Len ->
   {Bin, Rest} = split_binary(Data, Len),
   NewState = State#state{data = Rest, data_proc = fun process_header/1},
   Event = receipt_event(Type, Bin, Len, Marker),
-  rtm_fsm:trigger(FSM, Event),
+  rtm_fsm:trigger(Fsm, Event),
   process_header(NewState);
 
 process_message(State) ->
