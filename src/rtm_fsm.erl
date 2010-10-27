@@ -39,6 +39,7 @@ start_link(Session) ->
   gen_fsm:start_link(?MODULE, Session, []).
 
 init(#session{establishment = Estab} = Session) ->
+  random:seed(erlang:now()),
   case Estab of
     active ->
       trigger(self(), start),
@@ -66,8 +67,12 @@ state(Fsm) ->
 -spec idle(event(), #session{}) -> next_state(idle | connect).
 
 idle(start, #session{establishment = Estab} = Session) ->
-  ConnRetry = start_timer(conn_retry, Session#session.conn_retry_time),
-  NewSession = Session#session{conn_retry_timer = ConnRetry},
+  ConnRetryTime = Session#session.conn_retry_time
+                + jitter(Session#session.conn_retry_time),
+  NewSession = Session#session{
+    conn_retry_time  = ConnRetryTime,
+    conn_retry_timer = start_timer(conn_retry, ConnRetryTime)
+  },
   case Estab of
     active ->
       error_logger:info_msg("FSM:idle/start(active)~n"),
@@ -138,8 +143,9 @@ active(tcp_open, Session) ->
       {next_state, open_sent, Session#session{hold_timer = HoldTimer}};
     bad_peer ->
       ConnRetry = restart_timer(conn_retry, Session),
-      NewSession =
-        close_connection(Session#session{conn_retry_timer = ConnRetry}),
+      NewSession = close_connection(Session#session{
+        conn_retry_timer = ConnRetry
+      }),
       {next_state, active, NewSession}
   end;
 
@@ -380,6 +386,9 @@ restart_timer(hold, #session{hold_time = HoldTime} = Session) ->
 start_timer(Name, Time) ->
   gen_fsm:start_timer(timer:seconds(Time), Name).
 
+jitter(Time) ->
+  round(Time * (0.75 + random:uniform()/4)).
+
 clear_timer(undefined) ->
   false;
 clear_timer(Timer) ->
@@ -431,10 +440,13 @@ negotiate_hold_time(LocalHoldTime, PeerHoldTime) ->
 start_timers(Session, 0) ->
   Session;
 start_timers(Session, HoldTime) ->
-  KeepAlive = start_timer(keepalive, Session#session.keepalive_time),
+  KeepAliveTime = Session#session.keepalive_time
+                + jitter(Session#session.keepalive_time),
+  KeepAlive = start_timer(keepalive, KeepAliveTime),
   Hold = start_timer(hold, HoldTime),
   Session#session{hold_time       = HoldTime,
                   hold_timer      = Hold,
+                  keepalive_time  = KeepAliveTime,
                   keepalive_timer = KeepAlive}.
 
 log_notification(Bin) ->
