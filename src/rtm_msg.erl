@@ -25,7 +25,7 @@ send_open(#session{server     = Server,
 send_updates(Session, Servers, Attrs, Added, Deleted) ->
   AttrsToSend = update_path_attrs(Session, Attrs),
   lists:foreach(fun(Server) ->
-    send_update(Server, AttrsToSend, Added, Deleted)
+    send_update_messages(Server, AttrsToSend, Added, Deleted)
   end, Servers),
   ok.
 
@@ -34,7 +34,7 @@ send_updates(Session, Servers, RouteAttrs) ->
   dict:fold(fun(#route_attrs{path_attrs = Attrs}, Prefixes, ok) ->
     AttrsToSend = update_path_attrs(Session, Attrs),
     lists:foreach(fun(Server) ->
-      send_update(Server, AttrsToSend, Prefixes, [])
+      send_update_messages(Server, AttrsToSend, Prefixes, [])
     end, Servers)
   end, ok, RouteAttrs).
 
@@ -68,8 +68,8 @@ build_open(Asn, HoldTime, LocalAddr) ->
   Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
   list_to_binary([build_header(?BGP_TYPE_OPEN, Len), ?BGP_OPEN_PATTERN]).
 
--spec build_update(bgp_path_attrs(), [prefix()], [prefix()]) -> binary().
-build_update(Attrs, NewPrefixes, Withdrawn) ->
+-spec build_updates(bgp_path_attrs(), [prefix()], [prefix()]) -> [binary()].
+build_updates(Attrs, NewPrefixes, Withdrawn) ->
   PathAttrs = rtm_attr:attrs_to_binary(Attrs),
   TotalPathAttrLength = byte_size(PathAttrs),
   NLRI = build_prefixes(NewPrefixes),
@@ -77,7 +77,36 @@ build_update(Attrs, NewPrefixes, Withdrawn) ->
   UnfeasableLength = byte_size(WithdrawnRoutes),
   Len = ?BGP_UPDATE_MIN_LENGTH + TotalPathAttrLength + UnfeasableLength
       + byte_size(NLRI),
-  list_to_binary([build_header(?BGP_TYPE_UPDATE, Len), ?BGP_UPDATE_PATTERN]).
+  case Len > ?BGP_MAX_MSG_LEN of
+    true  -> split_updates(Attrs, TotalPathAttrLength, NewPrefixes, Withdrawn);
+    false -> [list_to_binary([build_header(?BGP_TYPE_UPDATE, Len),
+                              ?BGP_UPDATE_PATTERN])]
+  end.
+
+split_updates(Attrs, AttrsLen, New, []) ->
+  Split = split_prefixes(AttrsLen, New),
+  lists:foldl(fun(Ps, Acc) ->
+    build_updates(Attrs, Ps, []) ++ Acc
+  end, [], Split);
+split_updates(Attrs, AttrsLen, [], Del) ->
+  Split = split_prefixes(AttrsLen, Del),
+  lists:foldl(fun(Ps, Acc) ->
+    build_updates(Attrs, [], Ps) ++ Acc
+  end, [], Split);
+split_updates(Attrs, _AttrsLen, New, Del) ->
+  build_updates(dict:new(), [], Del) ++ build_updates(Attrs, New, []).
+
+% Split a prefix list in sublists that fit in an UPDATE message.
+split_prefixes(AttrsLen, Prefixes) ->
+  SplitPrefixes = fun({_Pref, Len} = Prefix, {CurLen, [Cur | Rest] = Split}) ->
+    NewLen = CurLen + Len,
+    case NewLen > ?BGP_MAX_MSG_LEN of
+      true  -> {AttrsLen + Len, [[Prefix] | Split]};
+      false -> {NewLen, [[Prefix | Cur] | Rest]}
+    end
+  end,
+  {_, Split} = lists:foldl(SplitPrefixes, {AttrsLen, [[]]}, Prefixes),
+  Split.
 
 -spec build_notification(bgp_error()) -> binary().
 build_notification({ErrorCode, ErrorSubCode, ErrorData}) ->
@@ -124,9 +153,9 @@ update_path_attrs(#session{local_asn  = LocalAsn,
   end,
   rtm_attr:fold(UpdateAttrs, PathAttrs, PathAttrs).
 
-send_update(Server, PathAttrs, Added, Deleted) ->
-  Msg = build_update(PathAttrs, Added, Deleted),
-  send(Server, Msg).
+send_update_messages(Server, PathAttrs, Added, Deleted) ->
+  Msgs = build_updates(PathAttrs, Added, Deleted),
+  lists:foreach(fun(Msg) -> send(Server, Msg) end, Msgs).
 
 octet_boundary_pad(Len) when Len > 24 -> 32 - Len;
 octet_boundary_pad(Len) when Len > 16 -> 24 - Len;
