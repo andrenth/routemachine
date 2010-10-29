@@ -64,7 +64,7 @@ send_message(int sock, struct nlmsghdr *nlmsgp)
 
     ret = sendmsg(sock, &msg, 0);
     if (ret == -1)
-        errx(1, "sendmsg");
+        err(1, "sendmsg");
 
     memset(buf, 0, sizeof(buf));
     iov.iov_base = buf;
@@ -165,7 +165,6 @@ int del_route(struct in_addr *dst, uint8_t len, struct in_addr *gw, int seq)
 {
     return change_route(RTM_DELROUTE, 0, seq, dst, len, gw);
 }
-
 
 int
 main(int argc, char **argv)
