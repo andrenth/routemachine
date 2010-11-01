@@ -20,8 +20,7 @@ send_open(#session{server     = Server,
   send(Server, Msg),
   ok.
 
--spec send_updates(#session{}, [pid()], dict(), [prefix()], [prefix()]) ->
-        ok.
+-spec send_updates(#session{}, [pid()], dict(), [prefix()], [prefix()]) -> ok.
 send_updates(Session, Servers, Attrs, Added, Deleted) ->
   AttrsToSend = update_path_attrs(Session, Attrs),
   lists:foreach(fun(Server) ->
