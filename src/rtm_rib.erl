@@ -215,10 +215,12 @@ insert_route(NewRouteAttrs, [RouteAttrs | Rest], First) ->
   end.
 
 clear_loc_rib(Rib) ->
-  lists:foreach(fun({Prefix, RouteAttrsList}) ->
-    lists:foreach(fun(#route_attrs{next_hop = NextHop}) ->
-      del_route(Prefix, NextHop)
-    end, RouteAttrsList)
+  lists:foreach(fun({Prefix, [#route_attrs{next_hop = NextHop,
+                                           peer_bgp_id = PeerId} | _Rest]}) ->
+    case PeerId =:= undefined of
+      true  -> ok;  % don't delete non-BGP routes.
+      false -> del_route(Prefix, NextHop)
+    end
   end, dict:to_list(Rib)).
 
 add_routes([], _NextHop) ->
