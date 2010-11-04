@@ -216,8 +216,6 @@ validate_as_path([{Type, _Asn} | _Rest], _LocalAsn)
                  when Type =/= ?BGP_AS_PATH_SET
                  andalso Type =/= ?BGP_AS_PATH_SEQUENCE ->
   {error, ?BGP_UPDATE_ERR_AS_PATH};
-validate_as_path([{_Type, LocalAsn} | _Rest], LocalAsn) ->
-  {error, ?BGP_UPDATE_ERR_LOOP};
 validate_as_path([{_Type, _Asn} | Rest], LocalAsn) ->
   validate_as_path(Rest, LocalAsn).
 

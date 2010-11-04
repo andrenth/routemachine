@@ -267,6 +267,7 @@ preference_cmp(#route_attrs{active = false} = RouteAttrs1,
                #route_attrs{active = true}  = RouteAttrs2) ->
   % TODO check reachability
   Attributes = [
+    fun as_path_loop/2,
     fun local_pref/2,
     fun as_path_len/2,
     fun origin/2,
@@ -287,6 +288,14 @@ compare_in_order([Fun | Rest], RouteAttrs1, RouteAttrs2) ->
     X when X > 0 -> gt;
     X when X < 0 -> lt;
     0 -> compare_in_order(Rest, RouteAttrs1, RouteAttrs2)
+  end.
+
+as_path_loop(#route_attrs{as_path_loop = L1},
+             #route_attrs{as_path_loop = L2}) ->
+  case {L1, L2} of
+    {false, false} -> eq;
+    {true,      _} -> lt;
+    {_,      true} -> gt
   end.
 
 local_pref(RouteAttrs1, RouteAttrs2) ->

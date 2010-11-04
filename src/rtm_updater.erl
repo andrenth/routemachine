@@ -55,14 +55,18 @@ init(Session) ->
 handle_cast({redistribute_routes, #bgp_update{path_attrs       = PathAttrs,
                                               withdrawn_routes = Withdrawn,
                                               nlri             = NLRI}},
-            #session{peer_addr = PeerAddr, peer_bgp_id = PeerId} = Session) ->
+            #session{local_asn   = LocalAsn,
+                     peer_addr   = PeerAddr,
+                     peer_bgp_id = PeerId} = Session) ->
+  AsPath = rtm_attr:get(?BGP_PATH_ATTR_AS_PATH, PathAttrs),
   RouteAttrs = #route_attrs{
-    active      = false,
-    next_hop    = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
-    path_attrs  = PathAttrs,
-    ebgp        = is_ebgp(Session),
-    peer_bgp_id = PeerId,
-    peer_addr   = PeerAddr
+    active       = false,
+    next_hop     = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
+    path_attrs   = PathAttrs,
+    ebgp         = is_ebgp(Session),
+    as_path_loop = as_path_has_loop(AsPath, LocalAsn),
+    peer_bgp_id  = PeerId,
+    peer_addr    = PeerAddr
   },
   {Added, Deleted, Repls} = rtm_rib:update(RouteAttrs, NLRI, Withdrawn),
   send_updates(Session, PathAttrs, {Added, Deleted, Repls}),
@@ -110,6 +114,16 @@ send_updates(#session{server = Originator} = Session, Attrs,
   Servers = lists:filter(fun(Server) -> Server =/= Originator end, AllServers),
   rtm_msg:send_updates(Session, Servers, Attrs, Added, Deleted),
   rtm_msg:send_updates(Session, Servers, Replacements).
+
+-spec as_path_has_loop([{?BGP_AS_PATH_SET | ?BGP_AS_PATH_SEQUENCE, uint16()}],
+                       uint16()) -> boolean().
+as_path_has_loop([], _LocalAsn) ->
+  false;
+as_path_has_loop([{_Type, Asns} | Rest], LocalAsn) ->
+  case lists:member(LocalAsn, Asns) of
+    true  -> true;
+    false -> as_path_has_loop(Rest, LocalAsn)
+  end.
 
 is_ebgp(#session{local_asn = LocalAsn, peer_asn = PeerAsn}) ->
   LocalAsn =/= PeerAsn.

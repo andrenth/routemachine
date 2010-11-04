@@ -126,7 +126,10 @@ parse_attr_value(?BGP_PATH_ATTR_AGGREGATOR, <<Asn:16, BgpId:32>>) ->
 parse_as_path(<<>>) ->
   [];
 parse_as_path(?BGP_PATH_ATTR_AS_PATH_PATTERN) ->
-  [{PathType, PathAsns} | parse_as_path(OtherPaths)].
+  [{PathType, parse_asns(PathAsns)} | parse_as_path(OtherPaths)].
+
+parse_asns(PathAsns) ->
+  [Asn || <<Asn : 16>> <= PathAsns].
 
 parse_prefixes(Prefixes) ->
   parse_prefixes(Prefixes, []).

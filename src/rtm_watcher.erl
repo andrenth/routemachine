@@ -139,10 +139,11 @@ modify_rib(Fun, Prefixes, NextHop) ->
     {?BGP_PATH_ATTR_NEXT_HOP, [NextHop]}
   ]),
   RouteAttrs = #route_attrs{
-    active      = false,
-    next_hop    = NextHop,
-    path_attrs  = PathAttrs,
-    ebgp        = false
+    active       = false,
+    next_hop     = NextHop,
+    path_attrs   = PathAttrs,
+    ebgp         = false,
+    as_path_loop = false
   },
   {Fun(RouteAttrs, Prefixes), PathAttrs}.
 
