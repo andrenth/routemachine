@@ -36,7 +36,7 @@ to_binary(#bgp_path_attr{optional   = Optional,
                          extended   = Extended,
                          type_code  = TypeCode,
                          length     = Len,
-                         raw_value  = Val}) ->
+                         binary     = Val}) ->
   <<Type:16>> =
     <<
        (to_bit(Optional)):1,
@@ -93,7 +93,7 @@ build(TypeCode, Bin, Flags) ->
     extended   = is_extended(Length),
     type_code  = TypeCode,
     length     = Length,
-    raw_value  = Bin
+    binary     = Bin
   },
   lists:foldl(fun(Flag, Acc) ->
     case Flag of
@@ -106,7 +106,7 @@ build(TypeCode, Bin, Flags) ->
 
 prepend_asn(Asn, #bgp_path_attr{extended  = Extended,
                                 type_code = ?BGP_PATH_ATTR_AS_PATH,
-                                raw_value = Path} = ASPath) ->
+                                binary    = Path} = ASPath) ->
   NewPath = case Path of
     << ?BGP_AS_PATH_SEQUENCE:8, N:8, FirstAsn:16, Rest/binary >> ->
       << ?BGP_AS_PATH_SEQUENCE:8, (N+1):8, Asn:16, FirstAsn:16, Rest/binary >>;
@@ -119,7 +119,7 @@ prepend_asn(Asn, #bgp_path_attr{extended  = Extended,
   ASPath#bgp_path_attr{
     extended  = Extended orelse is_extended(Length),
     length    = Length,
-    raw_value = NewPath
+    binary    = NewPath
   }.
 
 to_bit(false) -> 0;

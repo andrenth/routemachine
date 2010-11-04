@@ -261,6 +261,8 @@ run_rtm(Cmd, Len, Dst, GW) ->
                    [stream, {args, Args}]),
   erlang:port_close(Port).
 
+-spec preference_cmp(#route_attrs{active :: false},
+                     #route_attrs{active ::  true}) -> lt | eq | gt.
 preference_cmp(#route_attrs{active = false} = RouteAttrs1,
                #route_attrs{active = true}  = RouteAttrs2) ->
   % TODO check reachability
@@ -276,6 +278,8 @@ preference_cmp(#route_attrs{active = false} = RouteAttrs1,
   ],
   compare_in_order(Attributes, RouteAttrs1, RouteAttrs2).
 
+-spec compare_in_order([fun((#route_attrs{}, #route_attrs{}) -> integer())],
+                       #route_attrs{}, #route_attrs{}) -> lt | eq | gt.
 compare_in_order([], _RouteAttrs1, _RouteAttrs2) ->
   eq;
 compare_in_order([Fun | Rest], RouteAttrs1, RouteAttrs2) ->
@@ -325,7 +329,7 @@ sub_attrs(Attr, RouteAttrs1, RouteAttrs2) ->
 
 attr_value(Attr, #route_attrs{path_attrs = PathAttrs}) ->
   case dict:find(Attr, PathAttrs) of
-    {ok, [Value]} -> Value#bgp_path_attr.raw_value;
+    {ok, [Value]} -> Value#bgp_path_attr.binary;
     error         -> default_attr_value(Attr)
   end.
 

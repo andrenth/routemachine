@@ -98,8 +98,8 @@ parse_path_attrs(?BGP_PATH_ATTRS_PATTERN, Parsed) ->
     type_code  = AttrTypeCode,
     length     = AttrLength,
     value      = Value,
-    raw_value  = AttrValue % XXX this is just to ease the creation
-  },                       %     of NOTIFICATION messages.
+    binary     = AttrValue
+  },
   parse_path_attrs(OtherPathAttrs, dict:append(AttrTypeCode, Attr, Parsed)).
 
 parse_attr_value(?BGP_PATH_ATTR_ORIGIN, <<Value:8>>) ->

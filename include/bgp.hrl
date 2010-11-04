@@ -125,7 +125,7 @@
   type_code  :: bgp_path_attr_type_code(),
   length     :: uint16(),
   value      :: any(),
-  raw_value  :: binary()
+  binary     :: binary()
 }).
 
 -record(bgp_notification, {
