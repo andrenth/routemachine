@@ -20,9 +20,8 @@ peers(Conf) ->
 -spec networks(conf()) -> [prefix()].
 networks(Conf) ->
   {local, Local} = get(local, Conf),
-  lists:map(fun({Net, Len}) ->
-    {rtm_util:ip_to_num(Net), Len}
-  end, get_all(network, Local)).
+  Networks = get_all(network, Local),
+  lists:map(fun({Net, Len}) -> {rtm_util:ip_to_num(Net), Len} end, Networks).
 
 -spec get(atom(), conf()) -> none | tuple().
 get(Key, Conf) ->
@@ -50,8 +49,6 @@ build_session(Local, [Peer | Rest], Sessions) ->
     local_addr      = LocalAddr,
     peer_asn        = PeerAsn,
     peer_addr       = PeerAddr,
-    % TODO Make sure we have installed routes for the configured networks
-    % in the Loc-RIB, and add the proper entries in rtm_rib.
     hold_time       = get(hold_time, Peer, ?BGP_TIMER_HOLD),
     keepalive_time  = get(keepalive_time, Peer, ?BGP_TIMER_KEEPALIVE),
     conn_retry_time = get(conn_retry_time, Peer, ?BGP_TIMER_CONN_RETRY),
@@ -59,5 +56,3 @@ build_session(Local, [Peer | Rest], Sessions) ->
     establishment   = get(establishment, Peer, active)
   },
   build_session(Local, Rest, [Session | Sessions]).
-
-

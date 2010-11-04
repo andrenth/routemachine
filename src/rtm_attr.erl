@@ -49,7 +49,7 @@ to_binary(#bgp_path_attr{optional   = Optional,
   {Type, Len, Val}.
 
 -spec update_for_ebgp(bgp_path_attr_type_code(), #bgp_path_attr{},
-                      bgp_path_attrs(), uint16(), ipv4_address()) ->
+                      bgp_path_attrs(), uint16(), uint32()) ->
         bgp_path_attrs().
 update_for_ebgp(TypeCode, Attr, PathAttrs, Asn, Addr) ->
   case TypeCode of
@@ -82,8 +82,7 @@ as_path() ->
   build(?BGP_PATH_ATTR_AS_PATH, <<>>, [transitive]).
 
 next_hop(Addr) ->
-  Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
-  build(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
+  build(?BGP_PATH_ATTR_NEXT_HOP, <<Addr:32>>, [transitive]).
 
 build(TypeCode, Bin, Flags) ->
   Length = byte_size(Bin),

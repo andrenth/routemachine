@@ -25,9 +25,7 @@
                | tcp_closed
                | tcp_open_failed
                | tcp_fatal
-               | {timeout, reference(), conn_retry
-                                      | hold
-                                      | keepalive}
+               | {timeout, reference(), conn_retry | hold | keepalive}
                | open_received
                | keepalive_received
                | update_received

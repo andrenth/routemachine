@@ -16,7 +16,9 @@ send_open(#session{server     = Server,
                    local_asn  = Asn,
                    hold_time  = HoldTime,
                    local_addr = LocalAddr}) ->
-  Msg = build_open(Asn, HoldTime, LocalAddr),
+  % TODO allow for BgpId =/= LocalAddr.
+  BgpId = rtm_util:ip_to_num(LocalAddr),
+  Msg = build_open(Asn, HoldTime, BgpId),
   send(Server, Msg),
   ok.
 
@@ -58,11 +60,10 @@ build_header(MessageType, MessageLength) ->
   Marker = ?BGP_HEADER_MARKER,
   ?BGP_HEADER_PATTERN.
 
--spec build_open(uint16(), uint16(), ipv4_address()) -> binary().
-build_open(Asn, HoldTime, LocalAddr) ->
+-spec build_open(uint16(), uint16(), uint32()) -> binary().
+build_open(Asn, HoldTime, BgpId) ->
   Version = 4,
-  BgpId = rtm_util:ip_to_num(LocalAddr),
-  OptParamsLen = 0, % TODO
+  OptParamsLen = 0,   % TODO
   OptParams = <<>>,
   Len = ?BGP_OPEN_MIN_LENGTH + OptParamsLen,
   list_to_binary([build_header(?BGP_TYPE_OPEN, Len), ?BGP_OPEN_PATTERN]).
@@ -147,7 +148,8 @@ update_path_attrs(#session{local_asn  = LocalAsn,
       fun rtm_attr:update_for_ibgp/3;
     false ->
       fun(TypeCode, Attr, Attrs) ->
-        rtm_attr:update_for_ebgp(TypeCode, Attr, Attrs, LocalAsn, LocalAddr)
+        Addr = rtm_util:ip_to_num(LocalAddr),
+        rtm_attr:update_for_ebgp(TypeCode, Attr, Attrs, LocalAsn, Addr)
       end
   end,
   rtm_attr:fold(UpdateAttrs, PathAttrs, PathAttrs).
