@@ -2,6 +2,7 @@
 -export([get/2, fold/3]).
 -export([attrs_to_binary/1, to_binary/1]).
 -export([update_for_ebgp/5, update_for_ibgp/3]).
+-export([origin/1, as_path/0]).
 
 -include_lib("bgp.hrl").
 
@@ -74,6 +75,16 @@ update_for_ibgp(TypeCode, Attr, PathAttrs) ->
       PathAttrs
   end.
 
+origin(Origin) ->
+  build(?BGP_PATH_ATTR_ORIGIN, <<Origin:8>>, [transitive]).
+
+as_path() ->
+  build(?BGP_PATH_ATTR_AS_PATH, <<>>, [transitive]).
+
+next_hop(Addr) ->
+  Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
+  build(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
+
 build(TypeCode, Bin, Flags) ->
   Length = byte_size(Bin),
   InitAttr = #bgp_path_attr{
@@ -93,10 +104,6 @@ build(TypeCode, Bin, Flags) ->
       extended   -> Acc#bgp_path_attr{extended   = true}
     end
   end, InitAttr, Flags).
-
-next_hop(Addr) ->
-  Bin = <<(rtm_util:ip_to_num(Addr)):32>>,
-  build(?BGP_PATH_ATTR_NEXT_HOP, Bin, [transitive]).
 
 prepend_asn(Asn, #bgp_path_attr{extended  = Extended,
                                 type_code = ?BGP_PATH_ATTR_AS_PATH,

@@ -1,5 +1,5 @@
 -module(rtm_config).
--export([parse/1, peers/1, get/2, get/3]).
+-export([parse/1, peers/1, get/2, get/3, networks/1]).
 
 -include_lib("bgp.hrl").
 -include_lib("session.hrl").
@@ -16,6 +16,13 @@ peers(Conf) ->
   {local, Local} = get(local, Conf),
   Peers = get_all(peer, Conf),
   build_session(Local, Peers).
+
+-spec networks(conf()) -> [prefix()].
+networks(Conf) ->
+  {local, Local} = get(local, Conf),
+  lists:map(fun({Net, Len}) ->
+    {rtm_util:ip_to_num(Net), Len}
+  end, get_all(network, Local)).
 
 -spec get(atom(), conf()) -> none | tuple().
 get(Key, Conf) ->
@@ -45,7 +52,6 @@ build_session(Local, [Peer | Rest], Sessions) ->
     peer_addr       = PeerAddr,
     % TODO Make sure we have installed routes for the configured networks
     % in the Loc-RIB, and add the proper entries in rtm_rib.
-    networks        = get_networks(Local),
     hold_time       = get(hold_time, Peer, ?BGP_TIMER_HOLD),
     keepalive_time  = get(keepalive_time, Peer, ?BGP_TIMER_KEEPALIVE),
     conn_retry_time = get(conn_retry_time, Peer, ?BGP_TIMER_CONN_RETRY),
@@ -54,7 +60,4 @@ build_session(Local, [Peer | Rest], Sessions) ->
   },
   build_session(Local, Rest, [Session | Sessions]).
 
-get_networks(Local) ->
-  lists:map(fun({Net, Len}) ->
-    {rtm_util:ip_to_num(Net), Len}
-  end, get_all(network, Local)).
+

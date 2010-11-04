@@ -244,11 +244,12 @@ open_confirm(stop, Session) ->
 
 open_confirm(keepalive_received, #session{} = Session) ->
   error_logger:info_msg("FSM:open_confirm/keepalive_received~n"),
-  % Going into established; join the process group and send our
-  % installed routes to the peer.
+  % Going into established; join the process group, start the updater
+  % process and send our installed routes to the peer.
   join_established_group(Session),
-  distribute_installed_routes(Session),
-  {next_state, established, Session};
+  {ok, Updater} = rtm_updater_sup:start_child(Session),
+  rtm_updater:distribute_installed_routes(Updater),
+  {next_state, established, Session#session{updater = Updater}};
 
 open_confirm({timeout, _Ref, hold}, Session) ->
   error_logger:info_msg("FSM:open_confirm/hold_timeout~n"),
@@ -294,13 +295,13 @@ established(stop, Session) ->
   {stop, stop, Session};
 
 established({update_received, Bin, Len},
-            #session{local_asn = LocalAsn} = Session) ->
+            #session{local_asn = LocalAsn, updater = Updater} = Session) ->
   error_logger:info_msg("FSM:established/update_received~n"),
   Hold = restart_timer(hold, Session),
   NewSession = Session#session{hold_timer = Hold},
   case rtm_parser:parse_update(Bin, Len, LocalAsn) of
     {ok, Msg} ->
-      update_rib(Session, Msg),
+      rtm_updater:redistribute_routes(Updater, Msg),
       {next_state, established, NewSession};
     {error, Error} ->
       log_error(Error),
@@ -415,10 +416,9 @@ close_connection(#session{server = Server} = Session) ->
   rtm_server:close_peer_connection(Server),
   Session#session{server = undefined}.
 
-release_resources(Session) ->
+release_resources(#session{updater = Updater} = Session) ->
   NewSession = close_connection(Session),
-  Deleted = rtm_rib:remove_prefixes(),
-  rtm_msg:send_updates(Session, peers(), dict:new(), [], Deleted),
+  rtm_updater:remove_prefixes(Updater),
   clear_timer(Session#session.conn_retry_timer),
   clear_timer(Session#session.hold_timer),
   clear_timer(Session#session.keepalive_timer),
@@ -457,45 +457,6 @@ log_notification(Bin) ->
 log_error({Code, SubCode, Data}) ->
   error_logger:error_msg(rtm_util:error_string(Code, SubCode, Data)).
 
-%
-% TODO Move the stuff below to a separate simple-one-for-one rtm_rdp
-% gen_server process so that the FSM doesn't need to block and the RIB
-% can be asynchronous.
-%
-
-update_rib(#session{peer_bgp_id = PeerBgpId,
-                    peer_addr   = PeerAddr} = Session,
-           #bgp_update{path_attrs       = PathAttrs,
-                       withdrawn_routes = Withdrawn,
-                       nlri             = NLRI}) ->
-  RouteAttrs = #route_attrs{
-    active     = false,
-    next_hop   = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
-    path_attrs = PathAttrs,
-    ebgp       = is_ebgp(Session),
-    bgp_id     = PeerBgpId,
-    peer_addr  = PeerAddr,
-    fsm        = self()
-  },
-  {Added, Deleted, Replacements} = rtm_rib:update(RouteAttrs, NLRI, Withdrawn),
-  redistribute_routes(Session, PathAttrs, Added, Deleted, Replacements).
-
-redistribute_routes(#session{server = Originator} = Session, Attrs,
-                    Added, Deleted, Replacements) ->
-  AllServers = case is_ebgp(Session) of
-    true  -> peers();
-    false -> ebgp_peers()
-  end,
-  Servers = lists:filter(fun(Server) -> Server =/= Originator end, AllServers),
-  rtm_msg:send_updates(Session, Servers, Attrs, Added, Deleted),
-  rtm_msg:send_updates(Session, Servers, Replacements).
-
-distribute_installed_routes(#session{server = Server} = Session) ->
-  rtm_msg:send_updates(Session, [Server], rtm_rib:best_routes()).
-
-is_ebgp(#session{local_asn = LocalAsn, peer_asn = PeerAsn}) ->
-  LocalAsn =/= PeerAsn.
-
 join_established_group(#session{local_asn = LocalAsn,
                                 peer_asn  = PeerAsn,
                                 server = Server}) ->
@@ -504,12 +465,3 @@ join_established_group(#session{local_asn = LocalAsn,
     false -> established_ebgp
   end,
   ok = pg2:join(Group, Server).
-
-peers() ->
-  ebgp_peers() ++ ibgp_peers().
-
-ebgp_peers() ->
-  pg2:get_members(established_ebgp).
-
-ibgp_peers() ->
-  pg2:get_members(established_ibgp).
