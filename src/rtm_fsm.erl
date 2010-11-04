@@ -149,11 +149,10 @@ active(tcp_open, Session) ->
       {next_state, active, NewSession}
   end;
 
-active({open_received, Bin, Marker},
-       #session{peer_asn = PeerAsn, peer_addr = PeerAddr} = Session) ->
+active({open_received, Bin, Marker}, #session{peer_asn = PeerAsn} = Session) ->
   error_logger:info_msg("FSM:active/open_received~n"),
   clear_timer(Session#session.conn_retry_timer),
-  case rtm_parser:parse_open(Bin, Marker, PeerAsn, PeerAddr) of
+  case rtm_parser:parse_open(Bin, Marker, PeerAsn) of
     {ok, #bgp_open{asn = Asn, bgp_id = BgpId, hold_time = HoldTime}} ->
       rtm_msg:send_open(Session),
       rtm_msg:send_keepalive(Session),
@@ -193,9 +192,9 @@ open_sent(stop, Session) ->
   {stop, normal, Session};
 
 open_sent({open_received, Bin, Marker},
-          #session{peer_asn = PeerAsn, peer_addr = PeerAddr} = Session) ->
+          #session{peer_asn = PeerAsn} = Session) ->
   error_logger:info_msg("FSM:open_sent/open_received~n"),
-  case rtm_parser:parse_open(Bin, Marker, PeerAsn, PeerAddr) of
+  case rtm_parser:parse_open(Bin, Marker, PeerAsn) of
     {ok, #bgp_open{asn = Asn, bgp_id = BgpId, hold_time = HoldTime}} ->
       rtm_msg:send_keepalive(Session),
       NewHoldTime = negotiate_hold_time(Session#session.hold_time, HoldTime),

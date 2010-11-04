@@ -1,7 +1,7 @@
 -module(rtm_parser).
 -include_lib("bgp.hrl").
 
--export([parse_header/1, parse_open/4, parse_update/3, parse_notification/1]).
+-export([parse_header/1, parse_open/3, parse_update/3, parse_notification/1]).
 
 %
 % Parser functions.
@@ -19,18 +19,18 @@ parse_header(?BGP_HEADER_PATTERN) ->
     Error -> Error
   end.
 
--spec parse_open(binary(), non_neg_integer(), uint16(), ipv4_address()) ->
+-spec parse_open(binary(), non_neg_integer(), uint16()) ->
         {ok, #bgp_open{}} | {error, bgp_error()}.
-parse_open(?BGP_OPEN_PATTERN, Marker, ConfigAsn, ConfigId) ->
+parse_open(?BGP_OPEN_PATTERN, Marker, ConfigAsn) ->
   Msg = #bgp_open{
     version        = Version,
     asn            = Asn,
     hold_time      = HoldTime,
-    bgp_id         = rtm_util:num_to_ip(BgpId),
+    bgp_id         = BgpId,
     opt_params_len = OptParamsLen,
     opt_params     = parse_opt_params(OptParams)
   },
-  case rtm_validate:open(Msg, Marker, ConfigAsn, ConfigId) of
+  case rtm_validate:open(Msg, Marker, ConfigAsn) of
     ok    -> {ok, Msg};
     Error -> Error
   end.
@@ -121,7 +121,7 @@ parse_attr_value(?BGP_PATH_ATTR_ATOMIC_AGGR, <<>>) ->
   ok;
 
 parse_attr_value(?BGP_PATH_ATTR_AGGREGATOR, <<Asn:16, BgpId:32>>) ->
-  {Asn, rtm_util:num_to_ip(BgpId)}.
+  {Asn, BgpId}.
 
 parse_as_path(<<>>) ->
   [];

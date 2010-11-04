@@ -104,7 +104,7 @@
   version        :: byte(),
   asn            :: uint16(),
   hold_time      :: uint16(),
-  bgp_id         :: ipv4_address(),
+  bgp_id         :: uint32(),
   opt_params_len :: byte(),
   opt_params     :: [#bgp_opt_param{}]
 }).

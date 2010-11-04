@@ -2,7 +2,7 @@
 
 -include_lib("bgp.hrl").
 
--export([header/1, open/4, update/3]).
+-export([header/1, open/3, update/3]).
 
 -spec header(#bgp_header{}) -> ok | {error, bgp_error()}.
 header(Hdr) ->
@@ -11,14 +11,14 @@ header(Hdr) ->
             fun validate_msg_len/1,
             fun validate_type/1]).
 
--spec open(#bgp_open{}, non_neg_integer(), uint16(), ipv4_address()) ->
+-spec open(#bgp_open{}, non_neg_integer(), uint16()) ->
         ok | {error, bgp_error()}.
-open(Msg, Marker, ConfigAsn, ConfigId) ->
+open(Msg, Marker, ConfigAsn) ->
   validate(Msg, ?BGP_ERR_OPEN,
            [fun validate_version/1,
             fun(M) -> validate_asn(M, ConfigAsn) end,
             fun validate_hold_time/1,
-            fun(M) -> validate_bgp_id(M, ConfigId) end,
+            fun validate_bgp_id/1,
             fun(M) -> validate_opt_params(M, Marker) end]).
 
 -spec update(#bgp_update{}, bgp_msg_len(), uint16()) ->
@@ -86,11 +86,9 @@ validate_hold_time(#bgp_open{hold_time = HoldTime}) when HoldTime < 3 ->
 validate_hold_time(#bgp_open{}) ->
   ok.
 
-validate_bgp_id(#bgp_open{bgp_id = Id}, ConfigId) ->
-  case Id =:= ConfigId of
-    true  -> ok;
-    false -> {error, ?BGP_OPEN_ERR_BGP_ID}
-  end.
+validate_bgp_id(#bgp_open{bgp_id = _Id}) ->
+  % TODO validate it's a valid IP address.
+  ok.
 
 validate_opt_params(#bgp_open{opt_params = OptParams}, Marker) ->
   validate_params(OptParams, Marker).

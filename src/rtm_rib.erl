@@ -34,7 +34,7 @@ best_routes() ->
 update(RouteAttrs, Nlri, Withdrawn) ->
   gen_server:call(?MODULE, {update, RouteAttrs, Nlri, Withdrawn}).
 
--spec remove_prefixes(ipv4_address()) -> [prefix()].
+-spec remove_prefixes(uint32()) -> [prefix()].
 remove_prefixes(PeerBgpId) ->
   gen_server:call(?MODULE, {remove_prefixes, PeerBgpId}).
 

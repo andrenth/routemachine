@@ -11,7 +11,7 @@
   peer_asn         :: uint16(),
   local_addr       :: ipv4_address(),
   peer_addr        :: ipv4_address(),
-  peer_bgp_id      :: ipv4_address(),
+  peer_bgp_id      :: uint32(),
   hold_time        :: non_neg_integer(),
   hold_timer       :: reference(),
   keepalive_time   :: non_neg_integer(),
