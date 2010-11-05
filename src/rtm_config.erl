@@ -21,7 +21,9 @@ peers(Conf) ->
 networks(Conf) ->
   {local, Local} = get(local, Conf),
   Networks = get_all(network, Local),
-  lists:map(fun({Net, Len}) -> {rtm_util:ip_to_num(Net), Len} end, Networks).
+  lists:map(fun({Net, Len}) ->
+    {rtm_util:ip_to_num(Net, Len), Len}
+  end, Networks).
 
 -spec get(atom(), conf()) -> none | tuple().
 get(Key, Conf) ->

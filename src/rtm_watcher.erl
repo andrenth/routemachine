@@ -84,14 +84,12 @@ handle_cast(_Request, State) ->
 handle_data(<<>>, _State) ->
   ok;
 handle_data(?RTM_CMD_ADD_FORMAT, #state{networks = Networks} = State) ->
-  Dest = pad_destination(Destination, Mask),
   update_rib(fun add_to_rib/2, fun added_local_route/3,
-             {Dest, Mask}, Gateway, Networks),
+             {Destination, Mask}, Gateway, Networks),
   handle_data(OtherCommands, State);
 handle_data(?RTM_CMD_DEL_FORMAT, #state{networks = Networks} = State) ->
-  Dest = pad_destination(Destination, Mask),
   update_rib(fun delete_from_rib/2, fun deleted_local_route/3,
-             {Dest, Mask}, Gateway, Networks),
+             {Destination, Mask}, Gateway, Networks),
   handle_data(OtherCommands, State);
 handle_data(?RTM_CMD_ERR_FORMAT, State) ->
   error_logger:error_msg("rtm_watcher: ~s~n", [ErrMsg]),
@@ -109,10 +107,6 @@ added_local_route(Updater, Added, PathAttrs) ->
 deleted_local_route(Updater, {Deleted, _Replacements} = Update, PathAttrs) ->
   error_logger:info_msg("Withdrawn non-BGP prefixes ~p~n", [Deleted]),
   rtm_updater:deleted_local_route(Updater, Update, PathAttrs).
-
--spec pad_destination(uint32(), prefix_len()) -> uint32().
-pad_destination(Dest, Mask) ->
-  Dest bsl (32 - Mask).
 
 -spec update_rib(update_fun(), notify_fun(), prefix(), uint32(), [prefix()]) ->
         term().

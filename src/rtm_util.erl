@@ -1,7 +1,11 @@
 -module(rtm_util).
 -include_lib("bgp.hrl").
 
--export([ip_to_num/1, num_to_ip/1, num_to_ip/2, error_string/3]).
+-export([ip_to_num/1, ip_to_num/2, num_to_ip/1, num_to_ip/2, error_string/3]).
+
+-spec ip_to_num(ipv4_address(), prefix_len()) -> uint32().
+ip_to_num(Ip, Len) ->
+  ip_to_num(Ip) bsr (32 - Len).
 
 -spec ip_to_num(ipv4_address()) -> uint32().
 ip_to_num({B1, B2, B3, B4}) ->
