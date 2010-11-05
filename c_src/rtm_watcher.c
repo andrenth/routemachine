@@ -131,8 +131,10 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
         iov[DST].iov_base = RTA_DATA(attrs[RTA_DST]);
         iov[DST].iov_len  = (rtmp->rtm_dst_len + 7)/8;
     } else {
-        iov[DST].iov_base = '\0';
-        iov[DST].iov_len  = 0;
+        struct in_addr any;
+        any.s_addr = INADDR_ANY;
+        iov[DST].iov_base = &any;
+        iov[DST].iov_len  = sizeof(any);
     }
 
     if (attrs[RTA_GATEWAY] != NULL) {
