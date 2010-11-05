@@ -25,13 +25,14 @@ enum response_data {
     MASK,
     DST,
     GW,
+    PRIO,
     NUM_RESP
 };
 
 #define BUFSIZE 8192
 
 void
-parse_attr(struct rtattr *attrs[], struct rtattr *rta, int len)
+parse_attrs(struct rtattr *attrs[], struct rtattr *rta, int len)
 {
     memset(attrs, 0, sizeof(*rta) * (RTA_MAX + 1));
     while (RTA_OK(rta, len)) {
@@ -74,8 +75,8 @@ void
 notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
 {
     int len;
-    int cmd;
     int host_len;
+    unsigned char cmd;
     struct in_addr any;
     struct iovec iov[NUM_RESP];
     struct rtmsg *rtmp;
@@ -120,7 +121,7 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
         return;
     }
 
-    parse_attr(attrs, RTM_RTA(rtmp), len);
+    parse_attrs(attrs, RTM_RTA(rtmp), len);
 
     iov[CMD].iov_base = &cmd;
     iov[CMD].iov_len  = 1;
@@ -144,6 +145,16 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
     } else {
         iov[GW].iov_base = &any;
         iov[GW].iov_len  = sizeof(any);
+    }
+
+    if (attrs[RTA_PRIORITY] != NULL) {
+        uint32_t prio = htonl(*(uint32_t *)RTA_DATA(attrs[RTA_PRIORITY]));
+        iov[PRIO].iov_base = &prio;
+        iov[PRIO].iov_len = 4;
+    } else {
+        uint32_t prio = htonl(0);
+        iov[PRIO].iov_base = &prio;
+        iov[PRIO].iov_len = 4;
     }
 
     writev(STDOUT_FILENO, iov, NUM_RESP);

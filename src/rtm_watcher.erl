@@ -11,9 +11,11 @@
          handle_cast/2]).
 
 % Helper types.
--type update_res() :: [prefix()] | {[prefix()], dict()}.
--type update_fun() :: fun((#route_attrs{}, [prefix()]) -> update_res()).
--type notify_fun() :: fun((pid(), [prefix()], uint32()) -> ok).
+-type update_res()     :: [prefix()] | {[prefix()], dict()}.
+-type update_fun()     :: fun((#route_attrs{}, uint32(), [prefix()]) ->
+                            update_res()).
+-type rib_update_fun() :: fun((#route_attrs{}, [prefix()]) -> update_res()).
+-type notify_fun()     :: fun((pid(), [prefix()], uint32()) -> ok).
 
 % Keep these in sync with the C port.
 -define(RTM_CMD_ADD,   0).
@@ -25,6 +27,7 @@
      Mask         : 8,
      Destination  : Mask,
      Gateway      : 32,
+     Metric       : 32,
      OtherCommands/binary >>).
 
 -define(RTM_CMD_DEL_FORMAT,
@@ -32,6 +35,7 @@
      Mask         : 8,
      Destination  : Mask,
      Gateway      : 32,
+     Metric       : 32,
      OtherCommands/binary >>).
 
 -define(RTM_CMD_ERR_FORMAT,
@@ -65,6 +69,7 @@ handle_info({Port, {data, Bin}}, #state{port = Port} = State) ->
   {noreply, State}.
 
 terminate(_Reason, #state{port = Port}) ->
+  % XXX not working
   port_close(Port),
   ok.
 
@@ -83,13 +88,13 @@ handle_cast(_Request, State) ->
 
 handle_data(<<>>, _State) ->
   ok;
-handle_data(?RTM_CMD_ADD_FORMAT, #state{networks = Networks} = State) ->
-  update_rib(fun add_to_rib/2, fun added_local_route/3,
-             {Destination, Mask}, Gateway, Networks),
+handle_data(?RTM_CMD_ADD_FORMAT, #state{networks = Nets} = State) ->
+  update_rib(fun add_to_rib/3, fun added_local_route/3,
+             {Destination, Mask}, Gateway, Metric, Nets),
   handle_data(OtherCommands, State);
-handle_data(?RTM_CMD_DEL_FORMAT, #state{networks = Networks} = State) ->
-  update_rib(fun delete_from_rib/2, fun deleted_local_route/3,
-             {Destination, Mask}, Gateway, Networks),
+handle_data(?RTM_CMD_DEL_FORMAT, #state{networks = Nets} = State) ->
+  update_rib(fun delete_from_rib/3, fun deleted_local_route/3,
+             {Destination, Mask}, Gateway, Metric, Nets),
   handle_data(OtherCommands, State);
 handle_data(?RTM_CMD_ERR_FORMAT, State) ->
   error_logger:error_msg("rtm_watcher: ~s~n", [ErrMsg]),
@@ -97,6 +102,41 @@ handle_data(?RTM_CMD_ERR_FORMAT, State) ->
 handle_data(Data, _State) ->
   error_logger:error_msg("rtm_watcher: unexpected data ~p~n", [Data]),
   error.
+
+-spec update_rib(update_fun(), notify_fun(), prefix(), uint32(), uint32(),
+                 [prefix()]) -> ok | not_found.
+update_rib(UpdateFun, NotifyFun, Prefix, NextHop, Metric, Networks) ->
+  case matched_networks(Prefix, Networks) of
+    [] ->
+      not_found;
+    Matched ->
+      {Updates, PathAttrs} = UpdateFun(Matched, NextHop, Metric),
+      notify_updaters(NotifyFun, Updates, PathAttrs)
+  end.
+
+add_to_rib(Prefixes, NextHop, Metric) ->
+  modify_rib(fun rtm_rib:add/2, Prefixes, NextHop, Metric).
+
+delete_from_rib(Prefixes, NextHop, Metric) ->
+  modify_rib(fun rtm_rib:del/2, Prefixes, NextHop, Metric).
+
+-spec modify_rib(rib_update_fun(), [prefix()], uint32(), uint32()) ->
+        {update_res(), dict()}.
+modify_rib(Fun, Prefixes, NextHop, Metric) ->
+  PathAttrs = dict:from_list([
+    {?BGP_PATH_ATTR_ORIGIN,   [rtm_attr:origin(?BGP_ORIGIN_IGP)]},
+    {?BGP_PATH_ATTR_AS_PATH,  [rtm_attr:empty_as_path()]},
+    {?BGP_PATH_ATTR_NEXT_HOP, [rtm_attr:next_hop(NextHop)]},
+    {?BGP_PATH_ATTR_MED,      [rtm_attr:med(Metric)]}
+  ]),
+  RouteAttrs = #route_attrs{
+    active       = false,
+    next_hop     = NextHop,
+    path_attrs   = PathAttrs,
+    ebgp         = false,
+    as_path_loop = false
+  },
+  {Fun(RouteAttrs, Prefixes), PathAttrs}.
 
 -spec added_local_route(pid(), [prefix()], dict()) -> ok.
 added_local_route(Updater, Added, PathAttrs) ->
@@ -107,39 +147,6 @@ added_local_route(Updater, Added, PathAttrs) ->
 deleted_local_route(Updater, {Deleted, _Replacements} = Update, PathAttrs) ->
   error_logger:info_msg("Withdrawn non-BGP prefixes ~p~n", [Deleted]),
   rtm_updater:deleted_local_route(Updater, Update, PathAttrs).
-
--spec update_rib(update_fun(), notify_fun(), prefix(), uint32(), [prefix()]) ->
-        term().
-update_rib(UpdateFun, NotifyFun, Prefix, NextHop, Networks) ->
-  case matched_networks(Prefix, Networks) of
-    [] ->
-      not_found;
-    Matched ->
-      {Updates, PathAttrs} = UpdateFun(Matched, NextHop),
-      notify_updaters(NotifyFun, Updates, PathAttrs)
-  end.
-
-add_to_rib(Prefixes, NextHop) ->
-  modify_rib(fun rtm_rib:add/2, Prefixes, NextHop).
-
-delete_from_rib(Prefixes, NextHop) ->
-  modify_rib(fun rtm_rib:del/2, Prefixes, NextHop).
-
--spec modify_rib(update_fun(), [prefix()], uint32()) -> {update_res(), dict()}.
-modify_rib(Fun, Prefixes, NextHop) ->
-  PathAttrs = dict:from_list([
-    {?BGP_PATH_ATTR_ORIGIN,   [rtm_attr:origin(?BGP_ORIGIN_IGP)]},
-    {?BGP_PATH_ATTR_AS_PATH,  [rtm_attr:as_path()]},
-    {?BGP_PATH_ATTR_NEXT_HOP, [NextHop]}
-  ]),
-  RouteAttrs = #route_attrs{
-    active       = false,
-    next_hop     = NextHop,
-    path_attrs   = PathAttrs,
-    ebgp         = false,
-    as_path_loop = false
-  },
-  {Fun(RouteAttrs, Prefixes), PathAttrs}.
 
 -spec notify_updaters(notify_fun(), update_res(), dict()) -> ok.
 notify_updaters(_Fun, [], _PathAttrs) ->

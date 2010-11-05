@@ -2,7 +2,7 @@
 -export([get/2, fold/3]).
 -export([attrs_to_binary/1, to_binary/1]).
 -export([update_for_ebgp/5, update_for_ibgp/3]).
--export([origin/1, as_path/0]).
+-export([origin/1, next_hop/1, med/1, empty_as_path/0]).
 
 -include_lib("bgp.hrl").
 
@@ -78,11 +78,14 @@ update_for_ibgp(TypeCode, Attr, PathAttrs) ->
 origin(Origin) ->
   build(?BGP_PATH_ATTR_ORIGIN, <<Origin:8>>, [transitive]).
 
-as_path() ->
+empty_as_path() ->
   build(?BGP_PATH_ATTR_AS_PATH, <<>>, [transitive]).
 
 next_hop(Addr) ->
   build(?BGP_PATH_ATTR_NEXT_HOP, <<Addr:32>>, [transitive]).
+
+med(Med) ->
+  build(?BGP_PATH_ATTR_MED, <<Med:32>>, [optional]).
 
 build(TypeCode, Bin, Flags) ->
   Length = byte_size(Bin),
