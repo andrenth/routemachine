@@ -121,11 +121,6 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
 
     parse_attr(attrs, RTM_RTA(rtmp), len);
 
-    if (attrs[RTA_GATEWAY] == NULL) {
-        error_reply("no gateway");
-        return 1;
-    }
-
     iov[CMD].iov_base = &cmd;
     iov[CMD].iov_len  = 1;
 
@@ -140,8 +135,16 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
         iov[DST].iov_len  = 0;
     }
 
-    iov[GW].iov_base = RTA_DATA(attrs[RTA_GATEWAY]);
-    iov[GW].iov_len  = host_len;
+    if (attrs[RTA_GATEWAY] != NULL) {
+        iov[GW].iov_base = RTA_DATA(attrs[RTA_GATEWAY]);
+        iov[GW].iov_len  = host_len;
+    } else if (attrs[RTA_OIF] != NULL) {
+        iov[GW].iov_base = RTA_DATA(attrs[RTA_OIF]);
+        iov[GW].iov_len  = 1;
+    } else {
+        /*error_reply("no gateway");*/ /* for now just ignore */
+        return;
+    }
 
     writev(STDOUT_FILENO, iov, NUM_RESP);
 }
@@ -181,16 +184,13 @@ bind_socket(void)
 }
 
 void
-watch_routes(void)
+watch_routes(int sock, int forever)
 {
-    int sock;
     struct sockaddr_nl nl;
     struct iovec iov;
     struct msghdr msg;
     char buf[BUFSIZE];
 
-    sock = bind_socket();
-    
     msg.msg_name = &nl;
     msg.msg_namelen = sizeof(nl);
     msg.msg_iov = &iov;
@@ -209,7 +209,6 @@ watch_routes(void)
 
         iov.iov_len = BUFSIZE;
         ret = recvmsg(sock, &msg, 0);
-
         if (ret == -1) {
             if (errno == EINTR || errno == EAGAIN || errno == ENOBUFS)
                 continue;
@@ -224,6 +223,9 @@ watch_routes(void)
         p = (struct nlmsghdr *)buf;
         while (ret >= sizeof(*p)) {
             int len = p->nlmsg_len;
+
+            if (!forever && p->nlmsg_type == NLMSG_DONE)
+                return;
 
             if (len < sizeof(*p) || len > ret) {
                 if (msg.msg_flags & MSG_TRUNC)
@@ -243,10 +245,34 @@ watch_routes(void)
     }
 }
 
+void
+request_dump(int sock)
+{
+    struct {
+        struct nlmsghdr nlmsg;
+        struct rtgenmsg rtgen;
+    } req;
+
+    memset(&req, 0, sizeof(req));
+    req.nlmsg.nlmsg_len = sizeof(req);
+    req.nlmsg.nlmsg_type = RTM_GETROUTE;
+    req.nlmsg.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    req.nlmsg.nlmsg_pid = 0;
+    req.nlmsg.nlmsg_seq = 1;
+    req.rtgen.rtgen_family = AF_UNSPEC;
+
+    send(sock, &req, sizeof(req), 0);
+}
+
 int
 main(int argc, char **argv)
 {
-    watch_routes();
-    /* NOTREACHED */
+    int sock = bind_socket();
+    int forever = 1;
+    if (argc > 1 && strcmp(argv[1], "dump") == 0) {
+        forever = 0;
+        request_dump(sock);
+    }
+    watch_routes(sock, forever);
     return 0;
 }
