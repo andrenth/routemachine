@@ -25,6 +25,13 @@ init({Config, Sessions}) ->
       worker,
       [rtm_rib]},
 
+    {rtm_watcher,
+      {rtm_watcher, start_link, [Networks]},
+      permanent,
+      brutal_kill,
+      worker,
+      [rtm_watcher]},
+
     {rtm_server_sup,
       {rtm_server_sup, start_link, []},
       permanent,
@@ -51,14 +58,7 @@ init({Config, Sessions}) ->
       permanent,
       brutal_kill,
       worker,
-      [rtm_acceptor]},
-
-    {rtm_watcher,
-      {rtm_watcher, start_link, [Networks]},
-      permanent,
-      brutal_kill,
-      worker,
-      [rtm_watcher]}
+      [rtm_acceptor]}
   ],
 
   {ok, {{one_for_one, 1, 1}, ChildSpecs}}.

@@ -224,16 +224,14 @@ watch_routes(int sock, int forever)
         while (ret >= sizeof(*p)) {
             int len = p->nlmsg_len;
 
-            if (!forever && p->nlmsg_type == NLMSG_DONE)
-                return;
-
             if (len < sizeof(*p) || len > ret) {
                 if (msg.msg_flags & MSG_TRUNC)
                     error_quit("truncated message");
                 error_quit("malformed message");
             }
 
-            notify(&nl, p);
+            if (p->nlmsg_type != NLMSG_DONE)
+                notify(&nl, p);
 
             ret -= NLMSG_ALIGN(len);
             p = (struct nlmsghdr*)((char*)p + NLMSG_ALIGN(len));
@@ -268,11 +266,7 @@ int
 main(int argc, char **argv)
 {
     int sock = bind_socket();
-    int forever = 1;
-    if (argc > 1 && strcmp(argv[1], "dump") == 0) {
-        forever = 0;
-        request_dump(sock);
-    }
-    watch_routes(sock, forever);
+    request_dump(sock);
+    watch_routes(sock, 1);
     return 0;
 }
