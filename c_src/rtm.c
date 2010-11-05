@@ -14,6 +14,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "routemachine.h"
+
 #define BUFSIZE 8192
 #define CMD_LEN 3
 
@@ -136,7 +138,7 @@ change_route(int type, int flags, int seq, struct in_addr *dst,
 
     switch (type) {
     case RTM_NEWROUTE:
-        rtmp->rtm_protocol = RTPROT_BOOT;
+        rtmp->rtm_protocol = RTPROT_ROUTEMACHINE;
         rtmp->rtm_scope    = RT_SCOPE_UNIVERSE;
         rtmp->rtm_type     = RTN_UNICAST;
         break;
