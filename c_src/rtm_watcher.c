@@ -13,6 +13,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "routemachine.h"
+
 /* Keep these in sync with the erlang side. */
 #define RTM_CMD_ROUTE_ADD   0
 #define RTM_CMD_ROUTE_DEL   1
@@ -68,7 +70,7 @@ error_quit(char *msg)
     exit(1);
 }
 
-int
+void
 notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
 {
     int len;
@@ -87,16 +89,24 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
         break;
     default:
         error_reply("not a route");
-        return 1;
+        return;
     }
 
     len = nlmsgp->nlmsg_len - NLMSG_LENGTH(sizeof(*nlmsgp));
     if (len < 0) {
         error_reply("wrong message length");
-        return 1;
+        return;
     }
 
     rtmp = NLMSG_DATA(nlmsgp);
+
+    /* Don't notify routes added by ourselves. */
+    if (rtmp->rtm_protocol == RTPROT_ROUTEMACHINE)
+        return;
+
+    if (rtmp->rtm_table != RT_TABLE_MAIN)
+        return;
+
     switch (rtmp->rtm_family) {
     case AF_INET:
         host_len = 4;
@@ -106,7 +116,7 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
         break;
     default:
         error_reply("bad message family");
-        return 1;
+        return;
     }
 
     parse_attr(attrs, RTM_RTA(rtmp), len);
@@ -134,8 +144,6 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
     iov[GW].iov_len  = host_len;
 
     writev(STDOUT_FILENO, iov, NUM_RESP);
-
-    return 0;
 }
 
 int
