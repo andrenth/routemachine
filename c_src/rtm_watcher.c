@@ -69,7 +69,7 @@ error_quit(char *msg)
 }
 
 int
-notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp, void *arg)
+notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
 {
     int len;
     int cmd;
@@ -223,7 +223,7 @@ watch_routes(void)
                 error_quit("malformed message");
             }
 
-            notify(&nl, p, NULL);
+            notify(&nl, p);
 
             ret -= NLMSG_ALIGN(len);
             p = (struct nlmsghdr*)((char*)p + NLMSG_ALIGN(len));
