@@ -76,6 +76,7 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
     int len;
     int cmd;
     int host_len;
+    struct in_addr any;
     struct iovec iov[NUM_RESP];
     struct rtmsg *rtmp;
     struct rtattr *attrs[RTA_MAX + 1];
@@ -127,12 +128,12 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
     iov[MASK].iov_base = &rtmp->rtm_dst_len;
     iov[MASK].iov_len  = 1;
 
+    any.s_addr = INADDR_ANY;
+
     if (attrs[RTA_DST] != NULL) {
         iov[DST].iov_base = RTA_DATA(attrs[RTA_DST]);
         iov[DST].iov_len  = (rtmp->rtm_dst_len + 7)/8;
     } else {
-        struct in_addr any;
-        any.s_addr = INADDR_ANY;
         iov[DST].iov_base = &any;
         iov[DST].iov_len  = sizeof(any);
     }
@@ -140,12 +141,9 @@ notify(const struct sockaddr_nl *nlp, struct nlmsghdr *nlmsgp)
     if (attrs[RTA_GATEWAY] != NULL) {
         iov[GW].iov_base = RTA_DATA(attrs[RTA_GATEWAY]);
         iov[GW].iov_len  = host_len;
-    } else if (attrs[RTA_OIF] != NULL) {
-        iov[GW].iov_base = RTA_DATA(attrs[RTA_OIF]);
-        iov[GW].iov_len  = 1;
     } else {
-        /*error_reply("no gateway");*/ /* for now just ignore */
-        return;
+        iov[GW].iov_base = &any;
+        iov[GW].iov_len  = sizeof(any);
     }
 
     writev(STDOUT_FILENO, iov, NUM_RESP);
