@@ -87,12 +87,14 @@ handle_call({update, #route_attrs{peer_bgp_id = PeerBgpId,
   {reply, {AddedPrefixes, Deleted, Replacements}, State#state{rib = NewRib}};
 
 handle_call({remove_prefixes, PeerBgpId}, _From, #state{rib = Rib} = State) ->
-  {Removed, NewRib} = lists:foldl(fun(Prefix, {AccRemoved, AccRib}) ->
-    case del_prefixes(AccRib, [Prefix], PeerBgpId) of
-      {[Deleted], _, NewAccRib} -> {[Deleted | AccRemoved], NewAccRib};
-      {[], _, NewAccRib}        -> {AccRemoved, NewAccRib}
-    end
-  end, {[], Rib}, dict:fetch_keys(Rib)),
+  {Removed, NewRib} = lists:foldl(fun({Prefix, Rtas}, {AccDeleted, AccRib}) ->
+    FromId = fun(#route_attrs{peer_bgp_id = Id}) -> Id =:= PeerBgpId end,
+    {Deleted, Remaining} = lists:partition(FromId, Rtas),
+    lists:foreach(fun(#route_attrs{next_hop = NextHop}) ->
+     del_route(Prefix, NextHop)
+    end, Deleted),
+    {[Prefix | AccDeleted], dict:store(Prefix, Remaining, AccRib)}
+  end, {[], Rib}, dict:to_list(Rib)),
   {reply, Removed, State#state{rib = NewRib}}.
 
 code_change(_OldVsn, State, _Extra) ->
