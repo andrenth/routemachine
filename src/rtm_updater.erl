@@ -54,7 +54,7 @@ init(Session) ->
 
 handle_cast({redistribute_routes, #bgp_update{path_attrs       = PathAttrs,
                                               withdrawn_routes = Withdrawn,
-                                              nlri             = NLRI}},
+                                              nlri             = Nlri}},
             #session{local_asn   = LocalAsn,
                      peer_addr   = PeerAddr,
                      peer_bgp_id = PeerId} = Session) ->
@@ -68,8 +68,10 @@ handle_cast({redistribute_routes, #bgp_update{path_attrs       = PathAttrs,
     peer_bgp_id  = PeerId,
     peer_addr    = PeerAddr
   },
-  {Added, Deleted, Repls} = rtm_rib:update(RouteAttrs, NLRI, Withdrawn),
-  send_updates(Session, PathAttrs, {Added, Deleted, Repls}),
+  {Added, Replaced, Deleted, Replacements} = rtm_rib:update(RouteAttrs,
+                                                            Nlri, Withdrawn),
+  send_replaced_routes(Session, Replaced),
+  send_updates(Session, PathAttrs, {Added, Deleted, Replacements}),
   {noreply, Session};
 
 handle_cast(distribute_installed_routes, #session{server = Server} = Session) ->
@@ -105,15 +107,23 @@ code_change(_OldVsn, ok, _Extra) ->
 % Internal functions.
 %
 
-send_updates(#session{server = Originator} = Session, Attrs,
-             {Added, Deleted, Replacements}) ->
-  AllServers = case is_ebgp(Session) of
+send_replaced_routes(Session, Replaced) ->
+  Servers = servers(Session),
+  lists:foreach(fun({Prefix, Attrs}) ->
+    rtm_msg:send_updates(Session, Servers, Attrs, [], [Prefix])
+  end, Replaced).
+
+send_updates(Session, Attrs, {Added, Deleted, Replacements}) ->
+  Servers = servers(Session),
+  rtm_msg:send_updates(Session, Servers, Attrs, Added, Deleted),
+  rtm_msg:send_updates(Session, Servers, Replacements).
+
+servers(#session{server = Originator} = Session) ->
+  Servers = case is_ebgp(Session) of
     true  -> bgp_peers();
     false -> ebgp_peers()
   end,
-  Servers = lists:filter(fun(Server) -> Server =/= Originator end, AllServers),
-  rtm_msg:send_updates(Session, Servers, Attrs, Added, Deleted),
-  rtm_msg:send_updates(Session, Servers, Replacements).
+  lists:filter(fun(Server) -> Server =/= Originator end, Servers).
 
 -spec as_path_has_loop([{?BGP_AS_PATH_SET | ?BGP_AS_PATH_SEQUENCE, uint16()}],
                        uint16()) -> boolean().

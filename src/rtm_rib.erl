@@ -30,7 +30,7 @@ best_routes() ->
   gen_server:call(?MODULE, best_routes).
 
 -spec update(#route_attrs{}, [prefix()], [prefix()]) ->
-        {[prefix()], [prefix()], rib()}.
+        {[prefix()], [prefix()], [{prefix(), #route_attrs{}}], rib()}.
 update(RouteAttrs, Nlri, Withdrawn) ->
   gen_server:call(?MODULE, {update, RouteAttrs, Nlri, Withdrawn}).
 
@@ -66,9 +66,8 @@ handle_call(best_routes, _From, #state{rib = Rib} = State) ->
   {reply, RouteAttrs, State};
 
 handle_call({add, RouteAttrs, Prefixes}, _From, #state{rib = Rib} = State) ->
-  {Added, NewRib} = add_prefixes(Rib, RouteAttrs, Prefixes),
-  AddedPrefixes = lists:map(fun(T) -> element(2, T) end, Added),
-  {reply, AddedPrefixes, State#state{rib = NewRib}};
+  {Added, [], NewRib} = add_prefixes(Rib, RouteAttrs, Prefixes),
+  {reply, Added, State#state{rib = NewRib}};
 
 handle_call({del, #route_attrs{peer_bgp_id = PeerBgpId}, Prefixes}, _From,
             #state{rib = Rib} = State) ->
@@ -78,13 +77,15 @@ handle_call({del, #route_attrs{peer_bgp_id = PeerBgpId}, Prefixes}, _From,
 handle_call({update, #route_attrs{peer_bgp_id = PeerBgpId,
                                   next_hop    = NextHop} = RouteAttrs,
              Nlri, Withdrawn}, _From, #state{rib = Rib} = State) ->
-  {Added, TmpRib} = add_prefixes(Rib, RouteAttrs, Nlri),
+  {Added, Replaced, TmpRib} = add_prefixes(Rib, RouteAttrs, Nlri),
   {Deleted, Replacements, NewRib} = del_prefixes(TmpRib, Withdrawn, PeerBgpId),
+  lists:foreach(fun({Prefix, #route_attrs{next_hop = Gw}}) ->
+    del_route(Prefix, Gw)
+  end, Replaced),
   add_routes(Added, NextHop),
   del_routes(Deleted, NextHop),
   add_replacements(Replacements),
-  AddedPrefixes = lists:map(fun(T) -> element(2, T) end, Added),
-  {reply, {AddedPrefixes, Deleted, Replacements}, State#state{rib = NewRib}};
+  {reply, {Added, Replaced, Deleted, Replacements}, State#state{rib = NewRib}};
 
 handle_call({remove_prefixes, PeerBgpId}, _From, #state{rib = Rib} = State) ->
   {Removed, NewRib} = lists:foldl(fun({Prefix, Rtas}, {AccDeleted, AccRib}) ->
@@ -167,54 +168,90 @@ removed_active(_RouteAttrsList) ->
   false.
 
 -spec add_prefixes(rib(), #route_attrs{}, [prefix()]) ->
-        {[{added, prefix()} | {replacement, prefix(), uint32()}], rib()}.
+        {[prefix()], [prefix()], rib()}.
 add_prefixes(Rib, RouteAttrs, Prefixes) ->
-  InsertPrefix = fun(Prefix, {Added, AccRib}) ->
+  InsertPrefix = fun(Prefix, {Added, Deleted, AccRib}) ->
     case dict:find(Prefix, AccRib) of
       {ok, RouteAttrsList} ->
         case insert_route(RouteAttrs, RouteAttrsList) of
           {new, NewRouteAttrsList} ->
             NewRib = dict:store(Prefix, NewRouteAttrsList, AccRib),
-            {[{added, Prefix} | Added], NewRib};
-          {replacement, NewRouteAttrsList} ->
-            NewRib = dict:store(Prefix, NewRouteAttrsList, AccRib),
-            [_, #route_attrs{next_hop = OldNextHop} | _] = NewRouteAttrsList,
-            {[{replacement, Prefix, OldNextHop} | Added], NewRib};
+            {[Prefix | Added], Deleted, NewRib};
           {inactive, NewRouteAttrsList} ->
             NewRib = dict:store(Prefix, NewRouteAttrsList, AccRib),
-            {Added, NewRib};
+            {Added, Deleted, NewRib};
+          {implicit_replacement, NewRouteAttrsList} ->
+            NewRib = dict:store(Prefix, NewRouteAttrsList, AccRib),
+            {[Prefix | Added], Deleted, NewRib};
+          {explicit_replacement, [_, OldBest | _] = NewRouteAttrsList} ->
+            NewRib = dict:store(Prefix, NewRouteAttrsList, AccRib),
+            {[Prefix | Added], [{Prefix, OldBest} | Deleted], NewRib};
           equal ->
-            {Added, Rib}
+            {Added, Deleted, Rib}
         end;
       error ->
         NewRouteAttrs = RouteAttrs#route_attrs{active = true},
         NewRib = dict:store(Prefix, [NewRouteAttrs], AccRib),
-        {[{added, Prefix} | Added], NewRib}
+        {[Prefix | Added], Deleted, NewRib}
     end
   end,
-  lists:foldl(InsertPrefix, {[], Rib}, Prefixes).
+  lists:foldl(InsertPrefix, {[], [], Rib}, Prefixes).
 
 -spec insert_route(#route_attrs{}, [#route_attrs{}]) ->
-        {new | replacement | inactive, [#route_attrs{}]} | equal.
-insert_route(RouteAttrs, RouteAttrsList) ->
-  insert_route(RouteAttrs, RouteAttrsList, true).
-
-insert_route(NewRouteAttrs, [], false) ->
-  {inactive, [NewRouteAttrs]};
-insert_route(NewRouteAttrs, [], true) ->
-  {new, [NewRouteAttrs#route_attrs{active = true}]};
-insert_route(NewRouteAttrs, [RouteAttrs | Rest], First) ->
-  case preference_cmp(NewRouteAttrs, RouteAttrs) of
-    gt ->
-      ActRouteAttrs  = NewRouteAttrs#route_attrs{active = First},
-      InactRoutAttrs = RouteAttrs#route_attrs{active = false},
-      {replacement, [ActRouteAttrs, InactRoutAttrs | Rest]};
-    lt ->
-      {inactive, NewRest} = insert_route(NewRouteAttrs, Rest, false),
-      {inactive, [RouteAttrs | NewRest]};
-    eq ->
-      equal
+          equal
+        | {new, [#route_attrs{}]}
+        | {inactive, [#route_attrs{}]}
+        | {implicit_replacement, [#route_attrs{}]}
+        | {explicit_replacement, [#route_attrs{}]}.
+insert_route(Rta, []) ->
+  {new, [Rta#route_attrs{active = true}]};
+insert_route(Rta, [OldBest | _Rest] = Rtas) ->
+  case remove_replaced_route(Rta, Rtas) of
+    kept ->
+      equal;
+    TmpRtas ->
+      case insert(Rta, TmpRtas, true) of
+        equal                   -> equal;
+        [OldBest | _] = NewRtas -> {inactive, NewRtas};
+        [NewBest | _] = NewRtas -> return_replacement(NewBest, OldBest, NewRtas)
+      end
   end.
+
+-spec remove_replaced_route(#route_attrs{}, [#route_attrs{}]) ->
+        kept | [#route_attrs{}].
+remove_replaced_route(_NewRta, []) ->
+  [];
+remove_replaced_route(#route_attrs{peer_bgp_id = Id,
+                                   path_attrs  = NewAttrs},
+                      [#route_attrs{peer_bgp_id = Id,
+                                    path_attrs  = OldAttrs} | Rest]) ->
+  case NewAttrs =:= OldAttrs of
+    true  -> kept;
+    false -> Rest
+  end;
+remove_replaced_route(NewRta, [Rta | Rest]) ->
+  [Rta | remove_replaced_route(NewRta, Rest)].
+
+
+-spec insert(#route_attrs{}, [#route_attrs{}], boolean()) ->
+        equal | [#route_attrs{}].
+insert(NewRta, [], Active) ->
+  [NewRta#route_attrs{active = Active}];
+insert(NewRta, [Rta | Rest], Active) ->
+  case preference_cmp(NewRta, Rta) of
+    gt ->
+      Better = NewRta#route_attrs{active = Active},
+      Worse = Rta#route_attrs{active = false},
+      [Better, Worse | Rest];
+    lt -> [Rta | insert(NewRta, Rest, false)];
+    eq -> equal
+  end.
+
+return_replacement(#route_attrs{peer_bgp_id = Id},
+                   #route_attrs{peer_bgp_id = Id}, Rtas) ->
+  {implicit_replacement, Rtas};
+return_replacement(_NewBest, _OldBest, Rtas) ->
+  {explicit_replacement, Rtas}.
 
 clear_loc_rib(Rib) ->
   lists:foreach(fun({Prefix, [#route_attrs{next_hop = NextHop,
@@ -225,26 +262,16 @@ clear_loc_rib(Rib) ->
     end
   end, dict:to_list(Rib)).
 
-add_routes([], _NextHop) ->
-  ok;
-add_routes([{added, Prefix} | Rest], NextHop) ->
-  add_route(Prefix, NextHop),
-  add_routes(Rest, NextHop);
-add_routes([{replacement, Prefix, OldNextHop} | Rest], NextHop) ->
-  del_route(Prefix, OldNextHop),
-  add_route(Prefix, NextHop),
-  add_routes(Rest, NextHop).
+add_routes(Prefixes, NextHop) ->
+  lists:foreach(fun(Prefix) -> add_route(Prefix, NextHop) end, Prefixes).
+
+del_routes(Prefixes, NextHop) ->
+  lists:foreach(fun(Prefix) -> del_route(Prefix, NextHop) end, Prefixes).
 
 add_replacements(Replacements) ->
   dict:fold(fun(#route_attrs{next_hop = NextHop}, Prefix, ok) ->
     add_route(Prefix, NextHop)
   end, ok, Replacements).
-
-del_routes([], _NextHop) ->
-  ok;
-del_routes([Prefix | Rest], NextHop) ->
-  del_route(Prefix, NextHop),
-  del_routes(Rest, NextHop).
 
 add_route(Prefix, NextHop) ->
   io:format("Adding route: ~p via ~p~n", [Prefix, NextHop]),
