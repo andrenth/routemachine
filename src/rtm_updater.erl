@@ -107,11 +107,13 @@ code_change(_OldVsn, ok, _Extra) ->
 % Internal functions.
 %
 
+-spec send_replaced_routes(#session{}, [{prefix(), #route_attrs{}}]) -> ok.
 send_replaced_routes(Session, Replaced) ->
   Servers = servers(Session),
-  lists:foreach(fun({Prefix, Attrs}) ->
-    rtm_msg:send_updates(Session, Servers, Attrs, [], [Prefix])
-  end, Replaced).
+  lists:foreach(fun({Prefix, #route_attrs{path_attrs = PathAttrs}}) ->
+    rtm_msg:send_updates(Session, Servers, PathAttrs, [], [Prefix])
+  end, Replaced),
+  ok.
 
 send_updates(Session, Attrs, {Added, Deleted, Replacements}) ->
   Servers = servers(Session),
