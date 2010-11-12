@@ -35,13 +35,10 @@ update(Msg, MsgLen, LocalAsn) ->
 
 % Header validation.
 
-validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN,
-                            marker = ?BGP_HEADER_MARKER}) ->
+validate_marker(#bgp_header{marker = ?BGP_HEADER_MARKER}) ->
   ok;
-validate_marker(#bgp_header{msg_type = ?BGP_TYPE_OPEN}) ->
-  {error, ?BGP_HEADER_ERR_SYNC};
 validate_marker(#bgp_header{}) ->
-  ok.
+  {error, ?BGP_HEADER_ERR_SYNC}.
 
 validate_msg_len(#bgp_header{msg_type = ?BGP_TYPE_OPEN, msg_len = Len})
                  when Len >= ?BGP_OPEN_MIN_LENGTH andalso
