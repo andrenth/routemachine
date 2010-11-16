@@ -1,4 +1,5 @@
 #include <sys/types.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
@@ -8,6 +9,7 @@
 #include <linux/rtnetlink.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,11 +197,13 @@ bind_socket(void)
 }
 
 void
-watch_routes(int sock, int forever)
+read_routes(int sock)
 {
+    int ret;
     struct sockaddr_nl nl;
     struct iovec iov;
     struct msghdr msg;
+    struct nlmsghdr *p;
     char buf[BUFSIZE];
 
     msg.msg_name = &nl;
@@ -213,45 +217,40 @@ watch_routes(int sock, int forever)
     nl.nl_groups = 0;
 
     iov.iov_base = buf;
+    iov.iov_len = BUFSIZE;
 
-    for (;;) {
-        int ret;
-        struct nlmsghdr *p;
-
-        iov.iov_len = BUFSIZE;
-        ret = recvmsg(sock, &msg, 0);
-        if (ret == -1) {
-            if (errno == EINTR || errno == EAGAIN || errno == ENOBUFS)
-                continue;
-            error_quit("recvmsg");
-        }
-        if (ret == 0)
-            error_quit("recvmsg: EOF");
-
-        if (msg.msg_namelen != sizeof(nl))
-            error_quit("bad message namelen");
-
-        p = (struct nlmsghdr *)buf;
-        while (ret >= sizeof(*p)) {
-            int len = p->nlmsg_len;
-
-            if (len < sizeof(*p) || len > ret) {
-                if (msg.msg_flags & MSG_TRUNC)
-                    error_quit("truncated message");
-                error_quit("malformed message");
-            }
-
-            if (p->nlmsg_type != NLMSG_DONE)
-                notify(&nl, p);
-
-            ret -= NLMSG_ALIGN(len);
-            p = (struct nlmsghdr*)((char*)p + NLMSG_ALIGN(len));
-        }
-        if (msg.msg_flags & MSG_TRUNC)
-            continue;
-        if (ret != 0)
-            error_quit("unexpected remaining bytes");
+    ret = recvmsg(sock, &msg, 0);
+    if (ret == -1) {
+        if (errno == EINTR || errno == EAGAIN || errno == ENOBUFS)
+            return;
+        error_quit("recvmsg");
     }
+    if (ret == 0)
+        error_quit("recvmsg: EOF");
+
+    if (msg.msg_namelen != sizeof(nl))
+        error_quit("bad message namelen");
+
+    p = (struct nlmsghdr *)buf;
+    while (ret >= sizeof(*p)) {
+        int len = p->nlmsg_len;
+
+        if (len < sizeof(*p) || len > ret) {
+            if (msg.msg_flags & MSG_TRUNC)
+                error_quit("truncated message");
+            error_quit("malformed message");
+        }
+
+        if (p->nlmsg_type != NLMSG_DONE)
+            notify(&nl, p);
+
+        ret -= NLMSG_ALIGN(len);
+        p = (struct nlmsghdr*)((char*)p + NLMSG_ALIGN(len));
+    }
+    if (msg.msg_flags & MSG_TRUNC)
+        return;
+    if (ret != 0)
+        error_quit("unexpected remaining bytes");
 }
 
 void
@@ -273,11 +272,66 @@ request_dump(int sock)
     send(sock, &req, sizeof(req), 0);
 }
 
+void
+set_nonblock(int fd)
+{
+    int res;
+
+    res = fcntl(fd, F_GETFL, 0);
+    if (res == -1)
+        error_quit("fcntl[F_GETFL]");
+    res = fcntl(fd, F_SETFL, res | O_NONBLOCK);
+    if (res == -1)
+        error_quit("fcntl[F_SETFL]");
+}
+
 int
 main(int argc, char **argv)
 {
-    int sock = bind_socket();
-    request_dump(sock);
-    watch_routes(sock, 1);
+    int sock;
+    fd_set rset, wset;
+
+    sock = bind_socket();
+
+    set_nonblock(STDIN_FILENO);
+    set_nonblock(sock);
+
+    FD_ZERO(&rset);
+    FD_ZERO(&wset);
+
+    FD_SET(sock, &wset);
+
+    for (;;) {
+        int res;
+        ssize_t n;
+
+        FD_SET(STDIN_FILENO, &rset);
+        FD_SET(sock, &rset);
+
+        res = select(sock + 1, &rset, &wset, NULL, NULL);
+        if (res == -1)
+            error_quit("select");
+
+        if (FD_ISSET(STDIN_FILENO, &rset)) {
+            char buf[1];
+            n = read(STDIN_FILENO, buf, 1);
+            if (n == -1 && errno != EWOULDBLOCK)
+                error_quit("read");
+            else if (n == 0) {
+                close(sock);
+                exit(0);  /* got EOF from erlang */
+            }
+        }
+
+        if (FD_ISSET(sock, &wset)) {
+            FD_CLR(sock, &wset);
+            request_dump(sock);
+            read_routes(sock);
+        }
+
+        if (FD_ISSET(sock, &rset))
+            read_routes(sock);
+    }
+
     return 0;
 }

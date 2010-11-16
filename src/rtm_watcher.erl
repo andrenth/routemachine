@@ -61,7 +61,7 @@ init(Networks) ->
   register(?MODULE, self()),
   PrivDir = code:priv_dir(routemachine),
   Port = open_port({spawn_executable, filename:join([PrivDir, "rtm_watcher"])},
-                   [binary, in]),
+                   [binary]),
   {ok, #state{networks = Networks, port = Port}}.
 
 handle_info({Port, {data, Bin}}, #state{port = Port} = State) ->
@@ -69,7 +69,6 @@ handle_info({Port, {data, Bin}}, #state{port = Port} = State) ->
   {noreply, State}.
 
 terminate(_Reason, #state{port = Port}) ->
-  % XXX not working
   port_close(Port),
   ok.
 

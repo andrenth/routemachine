@@ -28,7 +28,7 @@ init({Config, Sessions}) ->
     {rtm_watcher,
       {rtm_watcher, start_link, [Networks]},
       permanent,
-      brutal_kill,
+      2000,
       worker,
       [rtm_watcher]},
 
