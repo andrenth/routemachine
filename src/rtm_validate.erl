@@ -216,6 +216,8 @@ validate_as_path([{Type, _Asn} | _Rest], _LocalAsn)
 validate_as_path([{_Type, _Asn} | Rest], LocalAsn) ->
   validate_as_path(Rest, LocalAsn).
 
+validate_mandatory_attrs(#bgp_update{nlri = []}) ->
+  ok;
 validate_mandatory_attrs(#bgp_update{path_attrs = PathAttrs}) ->
   check_mandatory_attrs(PathAttrs, [?BGP_PATH_ATTR_ORIGIN,
                                     ?BGP_PATH_ATTR_AS_PATH,

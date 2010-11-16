@@ -1,15 +1,17 @@
 -module(rtm_attr).
--export([get/2, fold/3]).
+-export([get/3, fold/3]).
 -export([attrs_to_binary/1, to_binary/1]).
 -export([update_for_ebgp/5, update_for_ibgp/3]).
 -export([origin/1, next_hop/1, med/1, empty_as_path/0]).
 
 -include_lib("bgp.hrl").
 
--spec get(bgp_path_attr_type_code(), bgp_path_attrs()) -> any().
-get(Attr, PathAttrs) ->
-  [#bgp_path_attr{value = Value}] = dict:fetch(Attr, PathAttrs),
-  Value.
+-spec get(bgp_path_attr_type_code(), bgp_path_attrs(), term()) -> none | term().
+get(Attr, PathAttrs, Default) ->
+  case dict:find(Attr, PathAttrs) of
+    {ok, [#bgp_path_attr{value = Value}]} -> Value;
+    error -> Default
+  end.
 
 -spec fold(fun((bgp_path_attr_type_code(), #bgp_path_attr{}, any()) -> any()),
            any(), bgp_path_attrs()) -> any().

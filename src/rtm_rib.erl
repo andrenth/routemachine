@@ -34,7 +34,7 @@ best_routes() ->
 update(RouteAttrs, Nlri, Withdrawn) ->
   gen_server:call(?MODULE, {update, RouteAttrs, Nlri, Withdrawn}).
 
--spec remove_prefixes(uint32()) -> [prefix()].
+-spec remove_prefixes(uint32()) -> {[prefix()], [dict()]}.
 remove_prefixes(PeerBgpId) ->
   gen_server:call(?MODULE, {remove_prefixes, PeerBgpId}).
 
@@ -87,16 +87,31 @@ handle_call({update, #route_attrs{peer_bgp_id = PeerBgpId,
   add_replacements(Replacements),
   {reply, {Added, Replaced, Deleted, Replacements}, State#state{rib = NewRib}};
 
-handle_call({remove_prefixes, PeerBgpId}, _From, #state{rib = Rib} = State) ->
-  {Removed, NewRib} = lists:foldl(fun({Prefix, Rtas}, {AccDeleted, AccRib}) ->
-    FromId = fun(#route_attrs{peer_bgp_id = Id}) -> Id =:= PeerBgpId end,
-    {Deleted, Remaining} = lists:partition(FromId, Rtas),
-    lists:foreach(fun(#route_attrs{next_hop = NextHop}) ->
-     del_route(Prefix, NextHop)
-    end, Deleted),
-    {[Prefix | AccDeleted], dict:store(Prefix, Remaining, AccRib)}
-  end, {[], Rib}, dict:to_list(Rib)),
-  {reply, Removed, State#state{rib = NewRib}}.
+handle_call({remove_prefixes, PeerId}, _From, #state{rib = Rib} = State) ->
+  {Deleted, Replacements, NewRib} =
+    lists:foldl(fun({Prefix, Rtas}, {AccDel, AccRepl, AccRib}) ->
+      case remove_peer_routes(Rtas, PeerId, Prefix, AccRib) of
+        {Del, Repl, NewAccRib} -> {[Del | AccDel], [Repl | AccRepl], NewAccRib};
+        none -> {AccDel, AccRepl, AccRib}
+      end
+    end, {[], [], Rib}, dict:to_list(Rib)),
+  {reply, {Deleted, Replacements}, State#state{rib = NewRib}}.
+
+-spec remove_peer_routes([#route_attrs{}], uint32(), prefix(), rib()) ->
+        {[prefix()], dict(), rib()} | none.
+remove_peer_routes([], _PeerBgpId, _Prefix, _Rib) ->
+  none;
+remove_peer_routes([Rta | Rest], PeerBgpId, Prefix, Rib) ->
+  #route_attrs{next_hop = NextHop, peer_bgp_id = Id} = Rta,
+  case Id =:= PeerBgpId of
+    true ->
+      {Del, Repl, NewRib} = del_prefixes(Rib, [Prefix], Id),
+      del_routes(Del, NextHop),
+      add_replacements(Repl),
+      {Del, Repl, NewRib};
+    false ->
+      remove_peer_routes(Rest, PeerBgpId, Prefix, Rib)
+  end.
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
@@ -130,30 +145,33 @@ del_prefixes(Rib, Prefixes, PeerBgpId) ->
       {inactive, NewAccRib} ->
         {Deleted, Replacements, NewAccRib};
       {replaced, RouteAttrs, NewAccRib} ->
-        {Deleted, dict:append(RouteAttrs, Prefix, Replacements), NewAccRib};
-      {unfeasible, Prefix, NewAccRib} ->
+        NewReplacements = dict:append(RouteAttrs, Prefix, Replacements),
+        {[Prefix | Deleted], NewReplacements, NewAccRib};
+      {unfeasible, NewAccRib} ->
         {[Prefix | Deleted], Replacements, NewAccRib}
     end
   end, {[], dict:new(), Rib}, Prefixes).
 
 -spec remove_entry(prefix(), rib(), ipv4_address()) ->
-        {replaced, #route_attrs{}, rib()} | {unfeasible, prefix(), rib()} |
+        {replaced, #route_attrs{}, rib()} | {unfeasible, rib()} |
         {inactive, rib()}.
 remove_entry(Prefix, Rib, PeerBgpId) ->
   case dict:find(Prefix, Rib) of
     {ok, RouteAttrsList} ->
       FromId = fun(#route_attrs{peer_bgp_id = Id}) -> Id =:= PeerBgpId end,
       {Removed, Remaining} = lists:partition(FromId, RouteAttrsList),
-      NewRib = dict:store(Prefix, Remaining, Rib),
       case removed_active(Removed) of
         true ->
           case Remaining of
             [] ->
-              {unfeasible, Prefix, dict:erase(Prefix, NewRib)};
-            [#route_attrs{active = false} = RouteAttrs | _] ->
+              {unfeasible, dict:erase(Prefix, Rib)};
+            [#route_attrs{active = false} = RouteAttrs | Rest] ->
+              Active = RouteAttrs#route_attrs{active = true},
+              NewRib = dict:store(Prefix, [Active | Rest], Rib),
               {replaced, RouteAttrs, NewRib}
           end;
         false ->
+          NewRib = dict:store(Prefix, Remaining, Rib),
           {inactive, NewRib}
       end;
     error ->
@@ -162,10 +180,8 @@ remove_entry(Prefix, Rib, PeerBgpId) ->
   end.
 
 -spec removed_active([#route_attrs{}]) -> boolean().
-removed_active([#route_attrs{active = true} | _Rest]) ->
-  true;
-removed_active(_RouteAttrsList) ->
-  false.
+removed_active([#route_attrs{active = true}]) -> true;
+removed_active(_)                             -> false.
 
 -spec add_prefixes(rib(), #route_attrs{}, [prefix()]) ->
         {[prefix()], [prefix()], rib()}.
@@ -243,8 +259,10 @@ insert(NewRta, [Rta | Rest], Active) ->
       Better = NewRta#route_attrs{active = Active},
       Worse = Rta#route_attrs{active = false},
       [Better, Worse | Rest];
-    lt -> [Rta | insert(NewRta, Rest, false)];
-    eq -> equal
+    lt ->
+      [Rta | insert(NewRta, Rest, false)];
+    eq ->
+      equal
   end.
 
 return_replacement(#route_attrs{peer_bgp_id = Id},
@@ -269,8 +287,8 @@ del_routes(Prefixes, NextHop) ->
   lists:foreach(fun(Prefix) -> del_route(Prefix, NextHop) end, Prefixes).
 
 add_replacements(Replacements) ->
-  dict:fold(fun(#route_attrs{next_hop = NextHop}, Prefix, ok) ->
-    add_route(Prefix, NextHop)
+  dict:fold(fun(#route_attrs{next_hop = NextHop}, Prefixes, ok) ->
+    add_routes(Prefixes, NextHop)
   end, ok, Replacements).
 
 add_route(Prefix, NextHop) ->
@@ -324,9 +342,9 @@ compare_in_order([Fun | Rest], RouteAttrs1, RouteAttrs2) ->
 as_path_loop(#route_attrs{as_path_loop = L1},
              #route_attrs{as_path_loop = L2}) ->
   case {L1, L2} of
-    {false, false} -> eq;
-    {true,      _} -> lt;
-    {_,      true} -> gt
+    {false, false} ->  0;
+    {true,      _} -> -1;
+    {_,      true} ->  1
   end.
 
 local_pref(RouteAttrs1, RouteAttrs2) ->
@@ -350,13 +368,13 @@ med(RouteAttrs1, RouteAttrs2) ->
 
 ebgp(#route_attrs{ebgp = true}, #route_attrs{ebgp = false}) ->  1;
 ebgp(#route_attrs{ebgp = false}, #route_attrs{ebgp = true}) -> -1;
-ebgp(#route_attrs{}, #route_attrs{}) -> 0.
+ebgp(#route_attrs{}, #route_attrs{})                        ->  0.
 
 bgp_id(#route_attrs{peer_bgp_id = Id1}, #route_attrs{peer_bgp_id = Id2}) ->
-  tuple_cmp(Id2, Id1).
+  Id2 - Id1.
 
 peer_addr(#route_attrs{peer_addr = Addr1}, #route_attrs{peer_addr = Addr2}) ->
-  tuple_cmp(Addr2, Addr1).
+  Addr2 - Addr1.
 
 % TODO raw value
 neighbor(<<>>) -> 0;
@@ -375,21 +393,3 @@ attr_value(Attr, #route_attrs{path_attrs = PathAttrs}) ->
 
 % TODO
 default_attr_value(_) -> <<0>>.
-
-
-tuple_cmp(T1, T2) when T1 =:= undefined orelse T2 =:= undefined ->
-  0;
-tuple_cmp(T1, T2) ->
-  tuple_cmp({T1, tuple_size(T1)}, {T2, tuple_size(T2)}, 1).
-
-tuple_cmp({_, 0}, {_, 0}, _) ->
-  0;
-tuple_cmp({_, 0}, {_, _}, _) ->
-  -1;
-tuple_cmp({_, _}, {_, 0}, _) ->
-  1;
-tuple_cmp({T1, S1}, {T2, S2}, N) ->
-  case element(N, T1) - element(N, T2) of
-    0 -> tuple_cmp({T1, S1-1}, {T2, S2-1}, N+1);
-    X -> X
-  end.

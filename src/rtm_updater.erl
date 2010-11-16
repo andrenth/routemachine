@@ -58,10 +58,10 @@ handle_cast({redistribute_routes, #bgp_update{path_attrs       = PathAttrs,
             #session{local_asn   = LocalAsn,
                      peer_addr   = PeerAddr,
                      peer_bgp_id = PeerId} = Session) ->
-  AsPath = rtm_attr:get(?BGP_PATH_ATTR_AS_PATH, PathAttrs),
+  AsPath = rtm_attr:get(?BGP_PATH_ATTR_AS_PATH, PathAttrs, []),
   RouteAttrs = #route_attrs{
     active       = false,
-    next_hop     = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs),
+    next_hop     = rtm_attr:get(?BGP_PATH_ATTR_NEXT_HOP, PathAttrs, 0),
     path_attrs   = PathAttrs,
     ebgp         = is_ebgp(Session),
     as_path_loop = as_path_has_loop(AsPath, LocalAsn),
@@ -87,8 +87,10 @@ handle_cast({deleted_local_route, {Deleted, Repls}, PathAttrs}, Session) ->
   {noreply, Session};
 
 handle_cast(remove_prefixes, #session{peer_bgp_id = PeerId} = Session) ->
-  Deleted = rtm_rib:remove_prefixes(PeerId),
-  rtm_msg:send_updates(Session, bgp_peers(), dict:new(), [], Deleted),
+  {Deleted, Replacements} = rtm_rib:remove_prefixes(PeerId),
+  lists:zipwith(fun(Del, Repl) ->
+    send_updates(Session, dict:new(), {[], Del, Repl})
+  end, Deleted, Replacements),
   {stop, normal, Session}.
 
 handle_call(_Req, _From, Session) ->
