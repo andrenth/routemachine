@@ -137,7 +137,7 @@ terminate(_Reason, #state{rib = Rib}) ->
 % Internal functions.
 %
 
--spec del_prefixes(rib(), [prefix()], ipv4_address()) ->
+-spec del_prefixes(rib(), [prefix()], uint32()) ->
         {[prefix()], dict(), rib()}.
 del_prefixes(Rib, Prefixes, PeerBgpId) ->
   lists:foldl(fun(Prefix, {Deleted, Replacements, AccRib}) ->
@@ -152,7 +152,7 @@ del_prefixes(Rib, Prefixes, PeerBgpId) ->
     end
   end, {[], dict:new(), Rib}, Prefixes).
 
--spec remove_entry(prefix(), rib(), ipv4_address()) ->
+-spec remove_entry(prefix(), rib(), uint32()) ->
         {replaced, #route_attrs{}, rib()} | {unfeasible, rib()} |
         {inactive, rib()}.
 remove_entry(Prefix, Rib, PeerBgpId) ->

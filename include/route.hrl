@@ -10,8 +10,8 @@
   path_attrs   :: bgp_path_attrs(),
   ebgp         :: boolean(),
   as_path_loop :: boolean(),
-  peer_addr    :: ipv4_address(),
-  peer_bgp_id  :: ipv4_address()
+  peer_addr    :: uint32(),
+  peer_bgp_id  :: uint32()
 }).
 
 -endif.
