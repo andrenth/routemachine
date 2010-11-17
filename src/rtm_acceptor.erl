@@ -90,7 +90,8 @@ trigger_start_event(Pid, Delay) ->
   error_logger:info_msg("Will trigger a start event in ~p seconds~n", [Delay]),
   timer:apply_after(timer:seconds(Delay), rtm_fsm, trigger, [Pid, start]).
 
-handle_collision(Socket, #session{peer_addr = PeerAddr} = Session, Pid) ->
+handle_collision(Socket, #session{peer_addr   = PeerAddr,
+                                  peer_bgp_id = PeerBgpId} = Session, Pid) ->
   case rtm_fsm:state(Pid) of
     established ->
       error_logger:info_msg("Rejecting active connection from peer ~p~n",
@@ -103,8 +104,8 @@ handle_collision(Socket, #session{peer_addr = PeerAddr} = Session, Pid) ->
       % prefer to use the incoming connection.
       error_logger:info_msg("Accepting active connection from peer ~p~n",
         [PeerAddr]),
-      ok = rtm_fsm_sup:terminate_child({rtm_fsm, PeerAddr}),
-      ok = rtm_fsm_sup:delete_child({rtm_fsm, PeerAddr}),
+      ok = rtm_fsm_sup:terminate_child(PeerBgpId),
+      ok = rtm_fsm_sup:delete_child(PeerBgpId),
       start_fsm(Socket, Session)
   end.
 
